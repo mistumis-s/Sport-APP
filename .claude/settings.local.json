@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(where node:*)",
+      "Bash(cmd.exe /c \"where node 2>nul && where npm 2>nul\")",
+      "Bash(cmd.exe /c \"node --version 2>nul || echo NOT_FOUND\")",
+      "Bash(powershell.exe -Command \"node --version; npm --version\")",
+      "Bash(powershell.exe -Command \"Get-Command node -ErrorAction SilentlyContinue; Get-Command npm -ErrorAction SilentlyContinue\")",
+      "Bash(powershell.exe -Command \"Remove-Item -Recurse -Force ''C:\\\\Users\\\\harea\\\\Desktop\\\\Sport\\\\backend\\\\node_modules'' -ErrorAction SilentlyContinue; Write-Host ''Done''\")",
+      "Bash(powershell.exe -Command \"Get-ChildItem -Recurse -Path ''C:\\\\Users\\\\harea\\\\Desktop\\\\Sport'' -Depth 3 | Where-Object { $_.FullName -notmatch ''node_modules'' } | Select-Object FullName\")",
+      "Bash(powershell.exe -Command \"Remove-Item -Force ''C:\\\\Users\\\\harea\\\\Desktop\\\\Sport\\\\backend\\\\sport.db'' -ErrorAction SilentlyContinue; Write-Host ''Borrado''\")"
+    ]
+  }
+}
