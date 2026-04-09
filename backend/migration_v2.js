@@ -4,6 +4,64 @@ const { DatabaseSync } = require('node:sqlite');
 const dbPath = path.join(__dirname, 'sport.db');
 const db = new DatabaseSync(dbPath);
 
+const CREATE_BASE_SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS users (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  role       TEXT NOT NULL CHECK(role IN ('player','coach')),
+  pin        TEXT,
+  password   TEXT,
+  team       TEXT NOT NULL DEFAULT 'DH ÉLITE',
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  id               INTEGER PRIMARY KEY AUTOINCREMENT,
+  date             TEXT NOT NULL,
+  team             TEXT NOT NULL DEFAULT 'DH ÉLITE',
+  match_day_type   TEXT NOT NULL,
+  is_match         INTEGER NOT NULL DEFAULT 0,
+  color_day        TEXT NOT NULL,
+  duration_minutes INTEGER NOT NULL,
+  week             INTEGER,
+  notes            TEXT,
+  created_by       INTEGER REFERENCES users(id),
+  created_at       TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS wellness (
+  id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id            INTEGER NOT NULL REFERENCES users(id),
+  session_id           INTEGER REFERENCES sessions(id),
+  date                 TEXT NOT NULL,
+  fatiga               INTEGER NOT NULL,
+  sueno_calidad        INTEGER NOT NULL,
+  sueno_horas          REAL NOT NULL,
+  estres               INTEGER NOT NULL,
+  motivacion           INTEGER NOT NULL,
+  dano_muscular        INTEGER NOT NULL,
+  observaciones        TEXT,
+  molestias_zonas      TEXT,
+  enfermedad           TEXT,
+  sensacion_proximo    TEXT,
+  entrenamiento_previo INTEGER,
+  otros_comentarios    TEXT,
+  wellness_score       REAL,
+  created_at           TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS rpe (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  player_id   INTEGER NOT NULL REFERENCES users(id),
+  session_id  INTEGER REFERENCES sessions(id),
+  date        TEXT NOT NULL,
+  rpe         INTEGER NOT NULL,
+  srpe        REAL,
+  comentarios TEXT,
+  created_at  TEXT DEFAULT (datetime('now'))
+);
+`;
+
 const CREATE_V2_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS teams (
   id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -172,6 +230,7 @@ function migrate() {
   try {
     db.exec('BEGIN IMMEDIATE');
 
+    db.exec(CREATE_BASE_SCHEMA_SQL);
     db.exec(CREATE_V2_TABLES_SQL);
     ensureSessionsTeamIdColumn();
 
