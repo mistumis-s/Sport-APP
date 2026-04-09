@@ -26,6 +26,7 @@ db.exec(`
     date             TEXT    NOT NULL,
     team             TEXT    NOT NULL DEFAULT 'DH ÉLITE',
     match_day_type   TEXT    NOT NULL,
+    is_match         INTEGER NOT NULL DEFAULT 0,
     color_day        TEXT    NOT NULL,
     duration_minutes INTEGER NOT NULL,
     week             INTEGER,
@@ -74,6 +75,7 @@ const newCols = [
   "ALTER TABLE wellness ADD COLUMN sensacion_proximo TEXT",
   "ALTER TABLE wellness ADD COLUMN entrenamiento_previo INTEGER",
   "ALTER TABLE wellness ADD COLUMN otros_comentarios TEXT",
+  "ALTER TABLE sessions ADD COLUMN is_match INTEGER NOT NULL DEFAULT 0",
 ];
 for (const sql of newCols) { try { db.exec(sql); } catch (_) {} }
 

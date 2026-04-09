@@ -9,6 +9,7 @@ import CoachDashboard from './pages/coach/CoachDashboard';
 import SessionCreate from './pages/coach/SessionCreate';
 import PlayerDetail from './pages/coach/PlayerDetail';
 import PlayersList from './pages/coach/PlayersList';
+import TeamRoster from './pages/coach/TeamRoster';
 import Navbar from './components/Navbar';
 
 function ProtectedRoute({ children, role }) {
@@ -32,6 +33,7 @@ function AppRoutes() {
           <Route path="/coach" element={<ProtectedRoute role="coach"><CoachDashboard /></ProtectedRoute>} />
           <Route path="/coach/session/new" element={<ProtectedRoute role="coach"><SessionCreate /></ProtectedRoute>} />
           <Route path="/coach/players" element={<ProtectedRoute role="coach"><PlayersList /></ProtectedRoute>} />
+          <Route path="/coach/roster" element={<ProtectedRoute role="coach"><TeamRoster /></ProtectedRoute>} />
           <Route path="/coach/player/:id" element={<ProtectedRoute role="coach"><PlayerDetail /></ProtectedRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

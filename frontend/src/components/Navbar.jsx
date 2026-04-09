@@ -11,12 +11,13 @@ export default function Navbar() {
     <nav className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
       <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
         <div className="flex items-center gap-6">
-          <span className="font-extrabold text-red-500 text-lg tracking-tight">DH ÉLITE</span>
+          <span className="font-extrabold text-red-500 text-lg tracking-tight">DH ELITE</span>
           {isCoach && (
             <div className="hidden sm:flex gap-1">
               <NavLink to="/coach" active={loc.pathname === '/coach'}>Dashboard</NavLink>
               <NavLink to="/coach/players" active={loc.pathname.startsWith('/coach/player')}>Jugadores</NavLink>
-              <NavLink to="/coach/session/new" active={loc.pathname === '/coach/session/new'}>+ Sesión</NavLink>
+              <NavLink to="/coach/roster" active={loc.pathname === '/coach/roster'}>Plantilla</NavLink>
+              <NavLink to="/coach/session/new" active={loc.pathname === '/coach/session/new'}>+ Sesion</NavLink>
             </div>
           )}
           {!isCoach && (
@@ -38,19 +39,19 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* Mobile bottom nav */}
       <div className="sm:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex z-50 shadow-[0_-4px_12px_rgba(0,0,0,0.06)]">
         {isCoach ? (
           <>
-            <MobileNavLink to="/coach" label="Dashboard" icon="📊" active={loc.pathname === '/coach'} />
-            <MobileNavLink to="/coach/players" label="Jugadores" icon="👥" active={loc.pathname.startsWith('/coach/player')} />
-            <MobileNavLink to="/coach/session/new" label="Sesión" icon="➕" active={loc.pathname === '/coach/session/new'} />
+            <MobileNavLink to="/coach" label="Dashboard" icon="D" active={loc.pathname === '/coach'} />
+            <MobileNavLink to="/coach/players" label="Jugadores" icon="J" active={loc.pathname.startsWith('/coach/player')} />
+            <MobileNavLink to="/coach/roster" label="Plantilla" icon="P" active={loc.pathname === '/coach/roster'} />
+            <MobileNavLink to="/coach/session/new" label="Sesion" icon="+" active={loc.pathname === '/coach/session/new'} />
           </>
         ) : (
           <>
-            <MobileNavLink to="/player" label="Inicio" icon="🏠" active={loc.pathname === '/player'} />
-            <MobileNavLink to="/player/wellness" label="Wellness" icon="💪" active={loc.pathname === '/player/wellness'} />
-            <MobileNavLink to="/player/rpe" label="RPE" icon="⚡" active={loc.pathname === '/player/rpe'} />
+            <MobileNavLink to="/player" label="Inicio" icon="I" active={loc.pathname === '/player'} />
+            <MobileNavLink to="/player/wellness" label="Wellness" icon="W" active={loc.pathname === '/player/wellness'} />
+            <MobileNavLink to="/player/rpe" label="RPE" icon="R" active={loc.pathname === '/player/rpe'} />
           </>
         )}
       </div>

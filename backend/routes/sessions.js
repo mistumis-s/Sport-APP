@@ -1,58 +1,93 @@
 const express = require('express');
-const { db } = require('../db');
 const { requireCoach, requireAuth } = require('../middleware/auth');
+const dbService = require('../src/services/dbService');
+const { SessionSchema } = require('../src/validation/sessionSchema');
 
 const router = express.Router();
+const DEFAULT_TEAM_ID = 1;
 
-// Coach creates a session
+function getTeamId(req) {
+  const rawTeamId = req.query.teamId ?? req.body?.team_id ?? req.body?.teamId;
+  const parsed = Number(rawTeamId);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_TEAM_ID;
+}
+
+function getValidationMessage(error) {
+  return error?.issues?.[0]?.message || 'Datos invalidados por el contrato';
+}
+
+function buildSessionPayload(req, fallback = {}) {
+  return {
+    team_id: getTeamId(req),
+    date: req.body.date || fallback.date || null,
+    match_day_type: req.body.match_day_type ?? fallback.match_day_type,
+    is_match: req.body.is_match == null ? Boolean(fallback.is_match) : Boolean(req.body.is_match),
+    color_day: req.body.color_day ?? fallback.color_day,
+    duration_minutes: req.body.duration_minutes == null ? Number(fallback.duration_minutes) : Number(req.body.duration_minutes),
+    notes: req.body.notes == null ? (fallback.notes ?? null) : (req.body.notes?.trim() ? req.body.notes.trim() : null),
+    created_by: req.user.id,
+  };
+}
+
 router.post('/', requireCoach, (req, res) => {
-  const { date, match_day_type, color_day, duration_minutes, notes } = req.body;
-  if (!date || !match_day_type || !color_day || !duration_minutes) {
-    return res.status(400).json({ error: 'Faltan campos obligatorios' });
+  try {
+    const parsed = SessionSchema.safeParse(buildSessionPayload(req));
+    if (!parsed.success) {
+      return res.status(400).json({ error: getValidationMessage(parsed.error) });
+    }
+
+    const session = dbService.createSession(parsed.data);
+    return res.status(session.updated_existing ? 200 : 201).json(session);
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo guardar la sesion' });
   }
-
-  // Calculate week number from date
-  const d = new Date(date);
-  const startOfYear = new Date(d.getFullYear(), 0, 1);
-  const week = Math.ceil(((d - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
-
-  const stmt = db.prepare(`
-    INSERT INTO sessions (date, match_day_type, color_day, duration_minutes, week, notes, created_by)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
-  `);
-  const result = stmt.run(date, match_day_type, color_day, parseInt(duration_minutes), week, notes || null, req.user.id);
-  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(result.lastInsertRowid);
-  res.status(201).json(session);
 });
 
-// Get all sessions
 router.get('/', requireAuth, (req, res) => {
-  const sessions = db.prepare('SELECT * FROM sessions ORDER BY date DESC').all();
-  res.json(sessions);
+  try {
+    const sessions = dbService.listSessionsByTeam(getTeamId(req));
+    return res.json(sessions);
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudieron cargar las sesiones' });
+  }
 });
 
-// Get single session
 router.get('/:id', requireAuth, (req, res) => {
-  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
-  if (!session) return res.status(404).json({ error: 'Sesión no encontrada' });
-  res.json(session);
+  try {
+    const session = dbService.getSessionById(Number(req.params.id), getTeamId(req));
+    if (!session) return res.status(404).json({ error: 'Sesion no encontrada' });
+    return res.json(session);
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo cargar la sesion' });
+  }
 });
 
-// Update session (coach only)
 router.put('/:id', requireCoach, (req, res) => {
-  const { match_day_type, color_day, duration_minutes, notes } = req.body;
-  db.prepare(`
-    UPDATE sessions SET match_day_type=?, color_day=?, duration_minutes=?, notes=?
-    WHERE id=?
-  `).run(match_day_type, color_day, parseInt(duration_minutes), notes || null, req.params.id);
-  const session = db.prepare('SELECT * FROM sessions WHERE id = ?').get(req.params.id);
-  res.json(session);
+  try {
+    const teamId = getTeamId(req);
+    const existing = dbService.getSessionById(Number(req.params.id), teamId);
+    if (!existing) return res.status(404).json({ error: 'Sesion no encontrada' });
+
+    const parsed = SessionSchema.safeParse(buildSessionPayload(req, existing));
+    if (!parsed.success) {
+      return res.status(400).json({ error: getValidationMessage(parsed.error) });
+    }
+
+    const updated = dbService.updateSession(Number(req.params.id), parsed.data);
+    return res.json(updated);
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo actualizar la sesion' });
+  }
 });
 
-// Delete session (coach only)
 router.delete('/:id', requireCoach, (req, res) => {
-  db.prepare('DELETE FROM sessions WHERE id = ?').run(req.params.id);
-  res.json({ ok: true });
+  try {
+    const result = dbService.deleteSession(Number(req.params.id), getTeamId(req));
+    if (!result.changes) return res.status(404).json({ error: 'Sesion no encontrada' });
+    return res.json({ ok: true });
+  } catch (error) {
+    return res.status(500).json({ error: 'No se pudo eliminar la sesion' });
+  }
 });
 
 module.exports = router;

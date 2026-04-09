@@ -99,25 +99,33 @@ function calcWeeklyMetrics(values) {
 }
 
 function buildWeeklyPlayerReport(currentWeekStart) {
+  const currentWeekEnd = new Date(new Date(`${currentWeekStart}T12:00:00`).getTime() + 6 * 86400000).toISOString().split('T')[0];
+  const baselineSince = new Date(new Date(`${currentWeekStart}T12:00:00`).getTime() - 35 * 86400000).toISOString().split('T')[0];
   const players = db.prepare("SELECT id, name FROM users WHERE role='player' ORDER BY name").all();
   const report = players.map(player => {
     const wellnessRows = db.prepare(`
       SELECT date, wellness_score
       FROM wellness
-      WHERE player_id = ? AND date >= ?
+      WHERE player_id = ? AND date >= ? AND date <= ?
       ORDER BY date
-    `).all(player.id, new Date(new Date(`${currentWeekStart}T12:00:00`).getTime() - 35 * 86400000).toISOString().split('T')[0]);
+    `).all(player.id, baselineSince, currentWeekEnd);
 
     const rpeRows = db.prepare(`
       SELECT date, rpe, srpe
       FROM rpe
-      WHERE player_id = ? AND date >= ?
+      WHERE player_id = ? AND date >= ? AND date <= ?
       ORDER BY date
-    `).all(player.id, new Date(new Date(`${currentWeekStart}T12:00:00`).getTime() - 35 * 86400000).toISOString().split('T')[0]);
+    `).all(player.id, baselineSince, currentWeekEnd);
 
-    const currentWeekWs = wellnessRows.filter(row => row.date >= currentWeekStart && row.wellness_score != null).map(row => row.wellness_score);
-    const currentWeekRpe = rpeRows.filter(row => row.date >= currentWeekStart && row.rpe != null).map(row => row.rpe);
-    const currentWeekSrpe = rpeRows.filter(row => row.date >= currentWeekStart && row.srpe != null).map(row => row.srpe);
+    const currentWeekWs = wellnessRows
+      .filter(row => row.date >= currentWeekStart && row.date <= currentWeekEnd && row.wellness_score != null)
+      .map(row => row.wellness_score);
+    const currentWeekRpe = rpeRows
+      .filter(row => row.date >= currentWeekStart && row.date <= currentWeekEnd && row.rpe != null)
+      .map(row => row.rpe);
+    const currentWeekSrpe = rpeRows
+      .filter(row => row.date >= currentWeekStart && row.date <= currentWeekEnd && row.srpe != null)
+      .map(row => row.srpe);
 
     const wsMetrics = calcWeeklyMetrics(currentWeekWs);
     const rpeMetrics = calcWeeklyMetrics(currentWeekSrpe);
@@ -126,14 +134,14 @@ function buildWeeklyPlayerReport(currentWeekStart) {
       player_id: player.id,
       player_name: player.name,
       wellness: {
-        ws: wsMetrics.mean != null ? round(wsMetrics.mean, 0) : null,
+        ws: wsMetrics.mean != null ? round(wsMetrics.mean, 1) : null,
         ac: calcWeeklyAcRatio(wellnessRows, 'wellness_score', currentWeekStart),
         monotony: wsMetrics.monotony,
         stress: wsMetrics.stress != null ? round(wsMetrics.stress, 0) : null,
         variability: wsMetrics.variability,
       },
       load: {
-        rpe: currentWeekRpe.length ? round(avg(currentWeekRpe), 0) : null,
+        rpe: currentWeekRpe.length ? round(avg(currentWeekRpe), 1) : null,
         ac: calcWeeklyAcRatio(rpeRows, 'srpe', currentWeekStart),
         monotony: rpeMetrics.monotony,
         stress: rpeMetrics.stress != null ? round(rpeMetrics.stress, 0) : null,
@@ -150,7 +158,7 @@ function buildWeeklyPlayerReport(currentWeekStart) {
 
   return {
     week_start: currentWeekStart,
-    week_end: new Date(new Date(`${currentWeekStart}T12:00:00`).getTime() + 6 * 86400000).toISOString().split('T')[0],
+    week_end: currentWeekEnd,
     week_number: getWeekNumber(new Date(`${currentWeekStart}T12:00:00`)),
     team: {
       wellness_ws: avgMetric(row => row.wellness.ws),
@@ -189,15 +197,116 @@ function getAvailableWeeks() {
   return Array.from(map.values()).sort((a, b) => b.week_start.localeCompare(a.week_start));
 }
 
+function getTeamScatter({ since, until, weekStart }) {
+  let wellnessQ;
+  let rpeQ;
+
+  if (weekStart) {
+    wellnessQ = db.prepare(`
+      SELECT w.player_id, u.name, ROUND(AVG(w.wellness_score),1) as ws
+      FROM wellness w
+      JOIN users u ON w.player_id = u.id
+      WHERE w.date >= ? AND w.date <= ?
+      GROUP BY w.player_id
+    `).all(since, until);
+    rpeQ = db.prepare(`
+      SELECT r.player_id, ROUND(AVG(r.rpe),2) as rpe
+      FROM rpe r
+      WHERE r.date >= ? AND r.date <= ?
+      GROUP BY r.player_id
+    `).all(since, until);
+  } else {
+    wellnessQ = db.prepare(`
+      SELECT w.player_id, u.name, ROUND(AVG(w.wellness_score),1) as ws
+      FROM wellness w
+      JOIN users u ON w.player_id = u.id
+      WHERE w.date >= ?
+      GROUP BY w.player_id
+    `).all(since);
+    rpeQ = db.prepare(`
+      SELECT player_id, ROUND(AVG(rpe),2) as rpe
+      FROM rpe
+      WHERE date >= ?
+      GROUP BY player_id
+    `).all(since);
+  }
+
+  const rpeMap = Object.fromEntries(rpeQ.map(r => [r.player_id, r.rpe]));
+  const scatter = wellnessQ
+    .filter(w => rpeMap[w.player_id] != null)
+    .map(w => ({ name: w.name, ws: w.ws, rpe: rpeMap[w.player_id] }));
+
+  const avgWS = avg(scatter.map(d => d.ws));
+  const avgRPE = avg(scatter.map(d => d.rpe));
+
+  return { scatter, avgWS: Math.round(avgWS || 0), avgRPE: Math.round((avgRPE || 0) * 10) / 10 };
+}
+
+function buildDateRange(startDate, endDate) {
+  const dates = [];
+  const current = new Date(`${startDate}T12:00:00`);
+  const end = new Date(`${endDate}T12:00:00`);
+
+  while (current <= end) {
+    dates.push(current.toISOString().split('T')[0]);
+    current.setDate(current.getDate() + 1);
+  }
+
+  return dates;
+}
+
+function dayDiff(fromDate, toDate) {
+  const from = new Date(`${fromDate}T12:00:00`);
+  const to = new Date(`${toDate}T12:00:00`);
+  return Math.round((to - from) / 86400000);
+}
+
+function formatRelativeMatchDay(diff) {
+  if (diff === 0) return 'MD';
+  return diff > 0 ? `MD+${diff}` : `MD${diff}`;
+}
+
+function enrichWithMatchContext(rows, matchDates) {
+  if (!matchDates.length) {
+    return rows.map(row => ({ ...row, relative_match_day: null }));
+  }
+
+  return rows.map(row => {
+    let bestDiff = null;
+    for (const matchDate of matchDates) {
+      const diff = dayDiff(matchDate, row.date);
+      if (
+        bestDiff == null ||
+        Math.abs(diff) < Math.abs(bestDiff) ||
+        (Math.abs(diff) === Math.abs(bestDiff) && diff > bestDiff)
+      ) {
+        bestDiff = diff;
+      }
+    }
+
+    return {
+      ...row,
+      relative_match_day: bestDiff == null ? null : formatRelativeMatchDay(bestDiff),
+    };
+  });
+}
+
 // ── Team overview ─────────────────────────────────────────────────────────────
 
 router.get('/team', requireCoach, (req, res) => {
   const { days = 14, week_start } = req.query;
-  const since = new Date(Date.now() - parseInt(days) * 86400000).toISOString().split('T')[0];
   const currentWeekStart = week_start || getMonday(new Date()).toISOString().split('T')[0];
+  const since = week_start
+    ? week_start
+    : new Date(Date.now() - parseInt(days) * 86400000).toISOString().split('T')[0];
+  const until = week_start
+    ? new Date(new Date(`${week_start}T12:00:00`).getTime() + 6 * 86400000).toISOString().split('T')[0]
+    : null;
 
   // Sessions in range
-  const sessions = db.prepare('SELECT * FROM sessions WHERE date >= ? ORDER BY date').all(since);
+  const sessions = week_start
+    ? db.prepare('SELECT * FROM sessions WHERE date >= ? AND date <= ? ORDER BY date').all(since, until)
+    : db.prepare('SELECT * FROM sessions WHERE date >= ? ORDER BY date').all(since);
 
   // Avg wellness per session date
   const wellnessByDate = db.prepare(`
@@ -210,9 +319,9 @@ router.get('/team', requireCoach, (req, res) => {
            ROUND(AVG(w.dano_muscular),2) as avg_dano,
            COUNT(*) as responses
     FROM wellness w
-    WHERE w.date >= ?
+    WHERE w.date >= ? ${week_start ? 'AND w.date <= ?' : ''}
     GROUP BY w.date ORDER BY w.date
-  `).all(since);
+  `).all(...(week_start ? [since, until] : [since]));
 
   // Avg RPE / sRPE per session date
   const rpeByDate = db.prepare(`
@@ -221,12 +330,17 @@ router.get('/team', requireCoach, (req, res) => {
            ROUND(AVG(r.srpe),1) as avg_srpe,
            COUNT(*) as responses
     FROM rpe r
-    WHERE r.date >= ?
+    WHERE r.date >= ? ${week_start ? 'AND r.date <= ?' : ''}
     GROUP BY r.date ORDER BY r.date
-  `).all(since);
+  `).all(...(week_start ? [since, until] : [since]));
 
   // Merge sessions + metrics by date
   const dateMap = {};
+  if (week_start) {
+    for (const date of buildDateRange(since, until)) {
+      dateMap[date] = { date, avg_ws: null, avg_rpe: null, avg_srpe: null, responses_w: 0, responses_r: 0 };
+    }
+  }
   for (const s of sessions) {
     dateMap[s.date] = { ...s, avg_ws: null, avg_rpe: null, avg_srpe: null, responses_w: 0, responses_r: 0 };
   }
@@ -243,13 +357,26 @@ router.get('/team', requireCoach, (req, res) => {
     Object.assign(dateMap[r.date], { avg_rpe: r.avg_rpe, avg_srpe: r.avg_srpe, responses_r: r.responses });
   }
 
-  const timeline = Object.values(dateMap).sort((a, b) => a.date.localeCompare(b.date));
+  const matchDates = db.prepare(`
+    SELECT DISTINCT date
+    FROM sessions
+    WHERE is_match = 1 OR match_day_type IN ('MD', 'MD(H)', 'MD(A)')
+    ORDER BY date
+  `).all().map(row => row.date);
+
+  const timeline = enrichWithMatchContext(
+    Object.values(dateMap).sort((a, b) => a.date.localeCompare(b.date)),
+    matchDates
+  );
+  const scatter = getTeamScatter({ since, until, weekStart: week_start });
 
   // Total players
   const total_players = db.prepare("SELECT COUNT(*) as c FROM users WHERE role='player'").get().c;
 
   res.json({
     timeline,
+    sessions,
+    scatter,
     total_players,
     available_weeks: getAvailableWeeks(),
     weekly_report: buildWeeklyPlayerReport(currentWeekStart)
@@ -351,48 +478,6 @@ router.get('/players', requireCoach, (req, res) => {
     max_date: dateBounds?.max_date || selectedDate,
     players: result
   });
-});
-
-// ── WS vs RPE scatter (team) ──────────────────────────────────────────────────
-
-router.get('/scatter', requireCoach, (req, res) => {
-  const { week } = req.query;
-  let wellnessQ, rpeQ;
-  if (week) {
-    wellnessQ = db.prepare(`
-      SELECT w.player_id, u.name, ROUND(AVG(w.wellness_score),1) as ws
-      FROM wellness w JOIN users u ON w.player_id=u.id
-      JOIN sessions s ON w.session_id=s.id
-      WHERE s.week=? GROUP BY w.player_id
-    `).all(parseInt(week));
-    rpeQ = db.prepare(`
-      SELECT r.player_id, ROUND(AVG(r.rpe),2) as rpe
-      FROM rpe r JOIN sessions s ON r.session_id=s.id
-      WHERE s.week=? GROUP BY r.player_id
-    `).all(parseInt(week));
-  } else {
-    const since7 = new Date(Date.now() - 7 * 86400000).toISOString().split('T')[0];
-    wellnessQ = db.prepare(`
-      SELECT w.player_id, u.name, ROUND(AVG(w.wellness_score),1) as ws
-      FROM wellness w JOIN users u ON w.player_id=u.id
-      WHERE w.date>=? GROUP BY w.player_id
-    `).all(since7);
-    rpeQ = db.prepare(`
-      SELECT player_id, ROUND(AVG(rpe),2) as rpe
-      FROM rpe WHERE date>=? GROUP BY player_id
-    `).all(since7);
-  }
-
-  const rpeMap = Object.fromEntries(rpeQ.map(r => [r.player_id, r.rpe]));
-  const scatter = wellnessQ
-    .filter(w => rpeMap[w.player_id] != null)
-    .map(w => ({ name: w.name, ws: w.ws, rpe: rpeMap[w.player_id] }));
-
-  // Team averages for quadrant lines
-  const avgWS = avg(scatter.map(d => d.ws));
-  const avgRPE = avg(scatter.map(d => d.rpe));
-
-  res.json({ scatter, avgWS: Math.round(avgWS || 0), avgRPE: Math.round((avgRPE || 0) * 10) / 10 });
 });
 
 function getMonday(d) {

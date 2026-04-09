@@ -6,10 +6,12 @@ import {
 } from 'recharts';
 import api from '../../services/api';
 import ScatterPlot from '../../components/charts/ScatterPlot';
+import { averageExcludingZeros, formatAverage, getInclusiveStartDate, getTodayISO } from '../../utils/metrics';
 
 const GRID = '#F1F5F9';
 const TICK = '#94A3B8';
 const TT  = { backgroundColor: '#fff', border: '1px solid #E2E8F0', borderRadius: 10, fontSize: 11, color: '#1E293B', boxShadow: '0 4px 12px rgba(0,0,0,0.08)' };
+const AVERAGE_WEEK_OPTIONS = [1, 2, 4, 8];
 
 const SENSACION_LABELS = {
   muy_bien: { label: 'Muy buenas sensaciones', color: 'text-emerald-600' },
@@ -62,11 +64,13 @@ function monotonyStatus(m) {
   return 'good';
 }
 
-function periodAvg(rows, field, days) {
-  const since = new Date(Date.now() - days * 86400000).toISOString().split('T')[0];
-  const vals = rows.filter(r => r.date >= since && r[field] != null).map(r => r[field]);
-  if (!vals.length) return null;
-  return Math.round(vals.reduce((s, v) => s + v, 0) / vals.length * 10) / 10;
+function periodAvg(rows, field, days, endDate = getTodayISO()) {
+  const since = getInclusiveStartDate(days, endDate);
+  const vals = rows
+    .filter((row) => row.date >= since && row.date <= endDate)
+    .map((row) => row[field]);
+
+  return averageExcludingZeros(vals);
 }
 
 function WellnessObservaciones({ w }) {
@@ -111,6 +115,7 @@ export default function PlayerDetail() {
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('overview');
   const [selectedDate, setSelectedDate] = useState('');
+  const [averageWeeks, setAverageWeeks] = useState(4);
 
   useEffect(() => {
     api.get(`/dashboard/player/${id}`).then(r => setData(r.data)).finally(() => setLoading(false));
@@ -128,9 +133,13 @@ export default function PlayerDetail() {
     return { label: formatDate(w.date), date: w.date, ws: Math.round(w.wellness_score), rpe: r?.rpe ?? null };
   });
 
-  const wsAvgs   = [7, 14, 28].map(d => periodAvg(wellness, 'wellness_score', d));
-  const rpeAvgs  = [7, 14, 28].map(d => periodAvg(rpe, 'rpe', d));
-  const srpeAvgs = [7, 14, 28].map(d => periodAvg(rpe, 'srpe', d));
+  const averageDays = averageWeeks * 7;
+  const averageEndDate = getTodayISO();
+  const averageSince = getInclusiveStartDate(averageDays, averageEndDate);
+  const wsAvg = periodAvg(wellness, 'wellness_score', averageDays, averageEndDate);
+  const rpeAvg = periodAvg(rpe, 'rpe', averageDays, averageEndDate);
+  const srpeAvg = periodAvg(rpe, 'srpe', averageDays, averageEndDate);
+  const combinedDataFiltered = combinedData.filter((day) => day.date >= averageSince && day.date <= averageEndDate);
 
   const dayWellness = selectedDate ? wellness.find(w => w.date === selectedDate) : null;
   const dayRPE      = selectedDate ? rpe.find(r => r.date === selectedDate) : null;
@@ -164,6 +173,13 @@ export default function PlayerDetail() {
             onChange={e => setSelectedDate(e.target.value)}
             className="bg-slate-50 border border-slate-200 rounded-lg px-3 py-1.5 text-sm text-slate-800 focus:outline-none focus:border-red-400"
           />
+          <button
+            type="button"
+            onClick={() => setSelectedDate(maxDate)}
+            className="text-xs px-3 py-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 font-semibold transition-colors"
+          >
+            Hoy
+          </button>
           {selectedDate && (
             <button onClick={() => setSelectedDate('')} className="text-xs text-slate-400 hover:text-slate-700 font-semibold transition-colors">
               ✕ Limpiar
@@ -258,7 +274,23 @@ export default function PlayerDetail() {
 
           {/* Period averages */}
           <div className="card">
-            <p className="text-sm font-bold text-slate-800 mb-3">Medias por período</p>
+            <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+              <p className="text-sm font-bold text-slate-800">Medias por semanas</p>
+              <div className="flex gap-2">
+                {AVERAGE_WEEK_OPTIONS.map(weeks => (
+                  <button
+                    key={weeks}
+                    type="button"
+                    onClick={() => setAverageWeeks(weeks)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                      averageWeeks === weeks ? 'bg-red-500 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'
+                    }`}
+                  >
+                    {weeks} sem
+                  </button>
+                ))}
+              </div>
+            </div>
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-slate-400 border-b border-slate-100">
@@ -269,16 +301,14 @@ export default function PlayerDetail() {
                 </tr>
               </thead>
               <tbody>
-                {[7, 14, 28].map((days, i) => (
-                  <tr key={days} className="border-b border-slate-50">
-                    <td className="py-2 text-slate-500 font-semibold">{days} días</td>
-                    <td className="text-center py-2 font-extrabold" style={{ color: wsScoreColor(wsAvgs[i]) }}>
-                      {wsAvgs[i] != null ? Math.round(wsAvgs[i]) : '—'}
-                    </td>
-                    <td className="text-center py-2 font-extrabold text-orange-500">{rpeAvgs[i] ?? '—'}</td>
-                    <td className="text-center py-2 font-extrabold text-violet-500">{srpeAvgs[i] != null ? Math.round(srpeAvgs[i]) : '—'}</td>
-                  </tr>
-                ))}
+                <tr className="border-b border-slate-50">
+                  <td className="py-2 text-slate-500 font-semibold">{averageWeeks} semana{averageWeeks > 1 ? 's' : ''}</td>
+                  <td className="text-center py-2 font-extrabold" style={{ color: wsScoreColor(wsAvg) }}>
+                    {formatAverage(wsAvg)}
+                  </td>
+                  <td className="text-center py-2 font-extrabold text-orange-500">{formatAverage(rpeAvg)}</td>
+                  <td className="text-center py-2 font-extrabold text-violet-500">{formatAverage(srpeAvg)}</td>
+                </tr>
               </tbody>
             </table>
           </div>
@@ -292,11 +322,11 @@ export default function PlayerDetail() {
             </div>
           </div>
 
-          {combinedData.length > 0 && (
+          {combinedDataFiltered.length > 0 && (
             <div className="card">
-              <p className="text-sm font-bold text-slate-800 mb-3">WS vs RPE</p>
+              <p className="text-sm font-bold text-slate-800 mb-3">WS vs RPE · ultimas {averageWeeks} semana{averageWeeks > 1 ? 's' : ''}</p>
               <ResponsiveContainer width="100%" height={180}>
-                <LineChart data={combinedData} margin={{ top: 5, right: 5, bottom: 20, left: -15 }}>
+                <LineChart data={combinedDataFiltered} margin={{ top: 5, right: 5, bottom: 20, left: -15 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke={GRID} />
                   <XAxis dataKey="label" tick={{ fontSize: 9, fill: TICK }} angle={-35} textAnchor="end" />
                   <YAxis yAxisId="ws" domain={[0, 100]} tick={{ fontSize: 9, fill: TICK }} />
