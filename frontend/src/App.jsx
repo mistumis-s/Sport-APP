@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import PlayerHome from './pages/player/PlayerHome';
 import WellnessForm from './pages/player/WellnessForm';
 import RPEForm from './pages/player/RPEForm';
+import PlayerEvolution from './pages/player/PlayerEvolution';
 import CoachDashboard from './pages/coach/CoachDashboard';
 import SessionCreate from './pages/coach/SessionCreate';
 import PlayerDetail from './pages/coach/PlayerDetail';
@@ -30,6 +31,7 @@ function AppRoutes() {
           <Route path="/player" element={<ProtectedRoute role="player"><PlayerHome /></ProtectedRoute>} />
           <Route path="/player/wellness" element={<ProtectedRoute role="player"><WellnessForm /></ProtectedRoute>} />
           <Route path="/player/rpe" element={<ProtectedRoute role="player"><RPEForm /></ProtectedRoute>} />
+          <Route path="/player/evolution" element={<ProtectedRoute role="player"><PlayerEvolution /></ProtectedRoute>} />
           <Route path="/coach" element={<ProtectedRoute role="coach"><CoachDashboard /></ProtectedRoute>} />
           <Route path="/coach/session/new" element={<ProtectedRoute role="coach"><SessionCreate /></ProtectedRoute>} />
           <Route path="/coach/players" element={<ProtectedRoute role="coach"><PlayersList /></ProtectedRoute>} />

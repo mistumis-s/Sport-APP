@@ -74,6 +74,29 @@ export default function PlayerHome() {
           scoreLabel="RPE"
         />
       </div>
+
+      <div className="space-y-3">
+        <h2 className="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">Mi rendimiento</h2>
+        <Link
+          to="/player/evolution"
+          className="block card border border-slate-100 hover:border-red-200 hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl bg-red-50">
+                📈
+              </div>
+              <div>
+                <p className="font-bold text-slate-800 text-sm">Mi Evolución</p>
+                <p className="text-xs text-slate-400 mt-0.5">Wellness, carga y métricas de los últimos 60 días</p>
+              </div>
+            </div>
+            <div className="w-8 h-8 bg-red-500 rounded-lg flex items-center justify-center text-white font-bold text-sm shadow-sm">
+              →
+            </div>
+          </div>
+        </Link>
+      </div>
     </div>
   );
 }

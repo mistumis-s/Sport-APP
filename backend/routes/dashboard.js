@@ -1,6 +1,6 @@
 const express = require('express');
 const { db } = require('../db');
-const { requireCoach } = require('../middleware/auth');
+const { requireCoach, requireAuth } = require('../middleware/auth');
 
 const router = express.Router();
 
@@ -383,14 +383,20 @@ router.get('/team', requireCoach, (req, res) => {
   });
 });
 
+// ── My evolution (player own data) ───────────────────────────────────────────
+
+router.get('/me', requireAuth, (req, res) => {
+  if (req.user.role !== 'player') return res.status(403).json({ error: 'Solo para jugadores' });
+  const id = req.user.id;
+  return getPlayerDetail(id, res);
+});
+
 // ── Player detail ─────────────────────────────────────────────────────────────
 
-router.get('/player/:id', requireCoach, (req, res) => {
-  const { id } = req.params;
+function getPlayerDetail(id, res) {
   const player = db.prepare('SELECT id, name FROM users WHERE id = ? AND role = ?').get(id, 'player');
   if (!player) return res.status(404).json({ error: 'Jugador no encontrado' });
 
-  // Last 60 days data (enough for date picker + 28d averages)
   const since60 = new Date(Date.now() - 60 * 86400000).toISOString().split('T')[0];
 
   const wellnessRows = db.prepare(`
@@ -407,10 +413,8 @@ router.get('/player/:id', requireCoach, (req, res) => {
     ORDER BY r.date
   `).all(id, since60);
 
-  // A/C ratio
   const ac = calcAcuteChronic(rpeRows);
 
-  // Current week metrics
   const startOfWeek = getMonday(new Date()).toISOString().split('T')[0];
   const weekRPE = rpeRows.filter(r => r.date >= startOfWeek && r.srpe != null).map(r => r.srpe);
   const monotony = calcMonotony(weekRPE);
@@ -418,7 +422,6 @@ router.get('/player/:id', requireCoach, (req, res) => {
   const stress = monotony ? Math.round(totalLoad * monotony) : null;
   const variability = weekRPE.length > 1 ? Math.round(stdev(weekRPE)) : null;
 
-  // WS scatter data (WS vs RPE per day)
   const scatter = wellnessRows.map(w => {
     const rpe = rpeRows.find(r => r.date === w.date);
     return { date: w.date, ws: w.wellness_score, rpe: rpe ? rpe.rpe : null, srpe: rpe ? rpe.srpe : null };
@@ -431,6 +434,10 @@ router.get('/player/:id', requireCoach, (req, res) => {
     metrics: { ac, monotony: monotony ? Math.round(monotony * 100) / 100 : null, stress, variability, totalLoad },
     scatter
   });
+}
+
+router.get('/player/:id', requireCoach, (req, res) => {
+  getPlayerDetail(req.params.id, res);
 });
 
 // ── Players list with latest status ──────────────────────────────────────────
