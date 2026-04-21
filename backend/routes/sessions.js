@@ -29,32 +29,29 @@ function buildSessionPayload(req, fallback = {}) {
   };
 }
 
-router.post('/', requireCoach, (req, res) => {
+router.post('/', requireCoach, async (req, res) => {
   try {
     const parsed = SessionSchema.safeParse(buildSessionPayload(req));
-    if (!parsed.success) {
-      return res.status(400).json({ error: getValidationMessage(parsed.error) });
-    }
-
-    const session = dbService.createSession(parsed.data);
+    if (!parsed.success) return res.status(400).json({ error: getValidationMessage(parsed.error) });
+    const session = await dbService.createSession(parsed.data);
     return res.status(session.updated_existing ? 200 : 201).json(session);
   } catch (error) {
     return res.status(500).json({ error: 'No se pudo guardar la sesion' });
   }
 });
 
-router.get('/', requireAuth, (req, res) => {
+router.get('/', requireAuth, async (req, res) => {
   try {
-    const sessions = dbService.listSessionsByTeam(getTeamId(req));
+    const sessions = await dbService.listSessionsByTeam(getTeamId(req));
     return res.json(sessions);
   } catch (error) {
     return res.status(500).json({ error: 'No se pudieron cargar las sesiones' });
   }
 });
 
-router.get('/:id', requireAuth, (req, res) => {
+router.get('/:id', requireAuth, async (req, res) => {
   try {
-    const session = dbService.getSessionById(Number(req.params.id), getTeamId(req));
+    const session = await dbService.getSessionById(Number(req.params.id), getTeamId(req));
     if (!session) return res.status(404).json({ error: 'Sesion no encontrada' });
     return res.json(session);
   } catch (error) {
@@ -62,28 +59,24 @@ router.get('/:id', requireAuth, (req, res) => {
   }
 });
 
-router.put('/:id', requireCoach, (req, res) => {
+router.put('/:id', requireCoach, async (req, res) => {
   try {
     const teamId = getTeamId(req);
-    const existing = dbService.getSessionById(Number(req.params.id), teamId);
+    const existing = await dbService.getSessionById(Number(req.params.id), teamId);
     if (!existing) return res.status(404).json({ error: 'Sesion no encontrada' });
-
     const parsed = SessionSchema.safeParse(buildSessionPayload(req, existing));
-    if (!parsed.success) {
-      return res.status(400).json({ error: getValidationMessage(parsed.error) });
-    }
-
-    const updated = dbService.updateSession(Number(req.params.id), parsed.data);
+    if (!parsed.success) return res.status(400).json({ error: getValidationMessage(parsed.error) });
+    const updated = await dbService.updateSession(Number(req.params.id), parsed.data);
     return res.json(updated);
   } catch (error) {
     return res.status(500).json({ error: 'No se pudo actualizar la sesion' });
   }
 });
 
-router.delete('/:id', requireCoach, (req, res) => {
+router.delete('/:id', requireCoach, async (req, res) => {
   try {
-    const result = dbService.deleteSession(Number(req.params.id), getTeamId(req));
-    if (!result.changes) return res.status(404).json({ error: 'Sesion no encontrada' });
+    const result = await dbService.deleteSession(Number(req.params.id), getTeamId(req));
+    if (!result.rowCount) return res.status(404).json({ error: 'Sesion no encontrada' });
     return res.json({ ok: true });
   } catch (error) {
     return res.status(500).json({ error: 'No se pudo eliminar la sesion' });

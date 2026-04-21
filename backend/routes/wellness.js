@@ -36,60 +36,53 @@ function buildWellnessPayload(req) {
   };
 }
 
-router.post('/', requireAuth, (req, res) => {
+router.post('/', requireAuth, async (req, res) => {
   try {
     const parsed = WellnessSchema.safeParse(buildWellnessPayload(req));
-    if (!parsed.success) {
-      return res.status(400).json({ error: getValidationMessage(parsed.error) });
-    }
+    if (!parsed.success) return res.status(400).json({ error: getValidationMessage(parsed.error) });
 
-    if (!dbService.playerBelongsToTeam(parsed.data.player_id, parsed.data.team_id)) {
+    if (!await dbService.playerBelongsToTeam(parsed.data.player_id, parsed.data.team_id)) {
       return res.status(403).json({ error: 'El jugador no pertenece al equipo solicitado' });
     }
 
-    const existing = dbService.getWellnessSubmission(parsed.data.player_id, parsed.data.date, parsed.data.team_id);
-    if (existing) {
-      return res.status(409).json({ error: 'Ya enviaste el Wellness de hoy' });
-    }
+    const existing = await dbService.getWellnessSubmission(parsed.data.player_id, parsed.data.date, parsed.data.team_id);
+    if (existing) return res.status(409).json({ error: 'Ya enviaste el Wellness de hoy' });
 
-    const created = dbService.createWellness(parsed.data);
+    const created = await dbService.createWellness(parsed.data);
     return res.status(201).json(created);
   } catch (error) {
     return res.status(500).json({ error: 'No se pudo guardar el Wellness' });
   }
 });
 
-router.get('/date/:date', requireCoach, (req, res) => {
+router.get('/date/:date', requireCoach, async (req, res) => {
   try {
-    const rows = dbService.getWellnessByDate(getTeamId(req), req.params.date);
+    const rows = await dbService.getWellnessByDate(getTeamId(req), req.params.date);
     return res.json(rows);
   } catch (error) {
     return res.status(500).json({ error: 'No se pudo cargar el Wellness del equipo' });
   }
 });
 
-router.get('/player/:id', requireCoach, (req, res) => {
+router.get('/player/:id', requireCoach, async (req, res) => {
   try {
     const teamId = getTeamId(req);
     const playerId = Number(req.params.id);
     const limit = Number.parseInt(req.query.limit, 10) || 30;
-    const player = dbService.getPlayersByTeam(teamId).find((item) => item.id === playerId);
-
-    if (!player) {
-      return res.status(404).json({ error: 'Jugador no encontrado en el equipo' });
-    }
-
-    const rows = dbService.getWellnessByPlayer(playerId, teamId, limit);
+    const players = await dbService.getPlayersByTeam(teamId);
+    const player = players.find(p => p.id === playerId);
+    if (!player) return res.status(404).json({ error: 'Jugador no encontrado en el equipo' });
+    const rows = await dbService.getWellnessByPlayer(playerId, teamId, limit);
     return res.json(rows);
   } catch (error) {
     return res.status(500).json({ error: 'No se pudo cargar el historial de Wellness' });
   }
 });
 
-router.get('/today', requireAuth, (req, res) => {
+router.get('/today', requireAuth, async (req, res) => {
   try {
     const today = new Date().toISOString().split('T')[0];
-    const existing = dbService.getWellnessSubmission(req.user.id, today, getTeamId(req));
+    const existing = await dbService.getWellnessSubmission(req.user.id, today, getTeamId(req));
     return res.json({ submitted: !!existing, data: existing || null });
   } catch (error) {
     return res.status(500).json({ error: 'No se pudo comprobar el Wellness de hoy' });

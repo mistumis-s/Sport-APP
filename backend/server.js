@@ -1,8 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-
-require('./db'); // init DB + seed
+const { init } = require('./db');
 
 const app = express();
 app.use(cors());
@@ -17,11 +16,13 @@ app.use('/api/dashboard', require('./routes/dashboard'));
 
 app.get('/api/health', (_, res) => res.json({ ok: true }));
 
-// Serve frontend in production
 if (process.env.NODE_ENV === 'production') {
   app.use(express.static(path.join(__dirname, 'public')));
   app.get('*', (_, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
 }
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`🚀 API running on http://localhost:${PORT}`));
+
+init()
+  .then(() => app.listen(PORT, () => console.log(`🚀 API running on http://localhost:${PORT}`)))
+  .catch(err => { console.error('❌ DB init failed:', err); process.exit(1); });
