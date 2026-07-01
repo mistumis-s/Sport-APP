@@ -52,7 +52,13 @@ router.post('/coach', async (req, res) => {
   );
 
   const token = jwt.sign(
-    { id: user.id, name: user.name, role: 'coach', team_id: membership?.team_id || null },
+    {
+      id: user.id,
+      name: user.name,
+      role: 'coach',
+      team_id: membership?.team_id || null,
+      must_change_password: Boolean(user.must_change_password),
+    },
     SECRET,
     { expiresIn: '7d' }
   );
@@ -65,6 +71,58 @@ router.post('/coach', async (req, res) => {
       email: user.email,
       role: 'coach',
       team_id: membership?.team_id || null,
+      must_change_password: Boolean(user.must_change_password),
+    },
+  });
+});
+
+router.post('/change-password', requireCoach, async (req, res) => {
+  const currentPassword = String(req.body.current_password || '');
+  const newPassword = String(req.body.new_password || '');
+
+  if (!currentPassword || !newPassword) {
+    return res.status(400).json({ error: 'Faltan datos' });
+  }
+  if (newPassword.length < 8) {
+    return res.status(400).json({ error: 'La nueva contrasena debe tener al menos 8 caracteres' });
+  }
+  if (currentPassword === newPassword) {
+    return res.status(400).json({ error: 'La nueva contrasena debe ser distinta' });
+  }
+
+  const { rows: [user] } = await pool.query('SELECT * FROM users WHERE id=$1 AND role=$2', [req.user.id, 'coach']);
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+  const valid = bcrypt.compareSync(currentPassword, user.password);
+  if (!valid) return res.status(401).json({ error: 'Contrasena actual incorrecta' });
+
+  const passwordHash = bcrypt.hashSync(newPassword, 10);
+  await pool.query(
+    'UPDATE users SET password=$1, must_change_password=0 WHERE id=$2',
+    [passwordHash, user.id]
+  );
+
+  const token = jwt.sign(
+    {
+      id: user.id,
+      name: user.name,
+      role: 'coach',
+      team_id: req.user.team_id || null,
+      must_change_password: false,
+    },
+    SECRET,
+    { expiresIn: '7d' }
+  );
+
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: 'coach',
+      team_id: req.user.team_id || null,
+      must_change_password: false,
     },
   });
 });

@@ -18,6 +18,7 @@ export default function Navbar() {
               <NavLink to="/coach/players" active={loc.pathname.startsWith('/coach/player')}>Jugadores</NavLink>
               <NavLink to="/coach/roster" active={loc.pathname === '/coach/roster'}>Plantilla</NavLink>
               <NavLink to="/coach/session/new" active={loc.pathname === '/coach/session/new'}>+ Sesion</NavLink>
+              <NavLink to="/change-password" active={loc.pathname === '/change-password'}>Cuenta</NavLink>
             </div>
           )}
           {!isCoach && (
@@ -46,6 +47,7 @@ export default function Navbar() {
             <MobileNavLink to="/coach/players" label="Jugadores" icon="J" active={loc.pathname.startsWith('/coach/player')} />
             <MobileNavLink to="/coach/roster" label="Plantilla" icon="P" active={loc.pathname === '/coach/roster'} />
             <MobileNavLink to="/coach/session/new" label="Sesion" icon="+" active={loc.pathname === '/coach/session/new'} />
+            <MobileNavLink to="/change-password" label="Cuenta" icon="C" active={loc.pathname === '/change-password'} />
           </>
         ) : (
           <>

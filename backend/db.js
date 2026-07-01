@@ -34,6 +34,7 @@ async function init() {
       role       TEXT NOT NULL CHECK(role IN ('player','coach')),
       pin        TEXT,
       password   TEXT,
+      must_change_password INTEGER NOT NULL DEFAULT 0,
       team       TEXT NOT NULL DEFAULT 'DH ÉLITE',
       created_at TIMESTAMP DEFAULT NOW()
     );
@@ -154,6 +155,9 @@ async function ensureSchema() {
   await pool.query(`
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS email TEXT;
+
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS must_change_password INTEGER NOT NULL DEFAULT 0;
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
     ON users (LOWER(email))

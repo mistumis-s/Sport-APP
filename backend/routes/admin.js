@@ -49,9 +49,9 @@ async function createCoach(client, { teamId, teamName, coachName, coachEmail, co
 
   const passwordHash = bcrypt.hashSync(temporaryPassword, 10);
   const { rows: [coach] } = await client.query(
-    `INSERT INTO users (name, email, role, password, team)
-     VALUES ($1, $2, 'coach', $3, $4)
-     RETURNING id, name, email, role`,
+    `INSERT INTO users (name, email, role, password, team, must_change_password)
+     VALUES ($1, $2, 'coach', $3, $4, 1)
+     RETURNING id, name, email, role, must_change_password`,
     [normalizedName.toUpperCase(), normalizedEmail, passwordHash, teamName]
   );
 

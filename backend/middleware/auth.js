@@ -16,6 +16,9 @@ function requireAuth(req, res, next) {
 function requireCoach(req, res, next) {
   requireAuth(req, res, () => {
     if (req.user.role !== 'coach') return res.status(403).json({ error: 'Solo para coaches' });
+    if (req.user.must_change_password && req.originalUrl !== '/api/auth/change-password') {
+      return res.status(403).json({ error: 'Debes cambiar la contrasena antes de continuar' });
+    }
     next();
   });
 }

@@ -12,24 +12,36 @@ import PlayerDetail from './pages/coach/PlayerDetail';
 import PlayersList from './pages/coach/PlayersList';
 import TeamRoster from './pages/coach/TeamRoster';
 import AdminProvisioning from './pages/AdminProvisioning';
+import ChangePassword from './pages/ChangePassword';
 import Navbar from './components/Navbar';
 
 function ProtectedRoute({ children, role }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/" replace />;
   if (role && user.role !== role) return <Navigate to="/" replace />;
+  if (user.role === 'coach' && user.must_change_password) {
+    return <Navigate to="/change-password" replace />;
+  }
   return children;
+}
+
+function PasswordRoute() {
+  const { user } = useAuth();
+  if (!user) return <Navigate to="/" replace />;
+  if (user.role !== 'coach') return <Navigate to="/" replace />;
+  return <ChangePassword />;
 }
 
 function AppRoutes() {
   const { user } = useAuth();
   return (
     <div className="min-h-screen bg-slate-100">
-      {user && <Navbar />}
+      {user && !user.must_change_password && <Navbar />}
       <div className="max-w-5xl mx-auto px-4 py-6">
         <Routes>
-          <Route path="/" element={user ? <Navigate to={user.role === 'coach' ? '/coach' : '/player'} replace /> : <Login />} />
+          <Route path="/" element={user ? <Navigate to={user.role === 'coach' ? (user.must_change_password ? '/change-password' : '/coach') : '/player'} replace /> : <Login />} />
           <Route path="/admin" element={<AdminProvisioning />} />
+          <Route path="/change-password" element={<PasswordRoute />} />
           <Route path="/player" element={<ProtectedRoute role="player"><PlayerHome /></ProtectedRoute>} />
           <Route path="/player/wellness" element={<ProtectedRoute role="player"><WellnessForm /></ProtectedRoute>} />
           <Route path="/player/rpe" element={<ProtectedRoute role="player"><RPEForm /></ProtectedRoute>} />
