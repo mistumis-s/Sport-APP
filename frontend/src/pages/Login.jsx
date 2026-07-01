@@ -76,7 +76,7 @@ export default function Login() {
                     className="input uppercase"
                     placeholder="A1B2C3D4"
                     value={teamCode}
-                    onChange={e => setTeamCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12))}
+                    onChange={e => setTeamCode(e.target.value.toUpperCase().replace(/[^A-Z0-9-]/g, '').slice(0, 32))}
                     required
                   />
                 </div>

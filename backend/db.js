@@ -2,7 +2,6 @@ require('dotenv').config();
 
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
-const crypto = require('crypto');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -202,24 +201,43 @@ async function ensureSchema() {
   await ensureTeamAccessCodes();
 }
 
-function generateTeamAccessCode() {
-  return crypto.randomBytes(4).toString('hex').toUpperCase();
-}
-
 async function ensureTeamAccessCodes() {
-  const { rows } = await pool.query('SELECT id FROM teams WHERE access_code IS NULL');
+  const { rows } = await pool.query(`
+    SELECT id, name
+    FROM teams
+    WHERE access_code IS NULL OR access_code ~ '^[A-F0-9]{8}$'
+  `);
   for (const team of rows) {
-    let assigned = false;
-    while (!assigned) {
-      const code = generateTeamAccessCode();
-      try {
-        await pool.query('UPDATE teams SET access_code=$1 WHERE id=$2', [code, team.id]);
-        assigned = true;
-      } catch (error) {
-        if (error.code !== '23505') throw error;
-      }
-    }
+    const code = await buildUniqueTeamAccessCode(team.name, team.id);
+    await pool.query('UPDATE teams SET access_code=$1 WHERE id=$2', [code, team.id]);
   }
 }
 
-module.exports = { pool, init, calcWellnessScore, generateTeamAccessCode };
+function slugifyTeamName(name) {
+  const normalized = String(name || 'TEAM')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toUpperCase()
+    .replace(/&/g, ' Y ')
+    .replace(/[^A-Z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  return normalized || 'TEAM';
+}
+
+async function buildUniqueTeamAccessCode(teamName, ignoreTeamId = null) {
+  const base = slugifyTeamName(teamName).slice(0, 28);
+  let candidate = base;
+  let suffix = 2;
+
+  while (true) {
+    const { rows: [existing] } = await pool.query(
+      'SELECT id FROM teams WHERE access_code=$1 AND ($2::int IS NULL OR id<>$2) LIMIT 1',
+      [candidate, ignoreTeamId]
+    );
+    if (!existing) return candidate;
+    candidate = `${base}-${suffix}`;
+    suffix += 1;
+  }
+}
+
+module.exports = { pool, init, calcWellnessScore, buildUniqueTeamAccessCode };
