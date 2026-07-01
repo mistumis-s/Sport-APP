@@ -133,14 +133,22 @@ function getWeekNumber(d) {
 
 // ── Async DB helpers ──────────────────────────────────────────────────────────
 
-async function getAvailableWeeks() {
+async function getAvailableWeeks(teamId) {
   const { rows } = await pool.query(`
     SELECT DISTINCT date FROM (
-      SELECT date FROM sessions
-      UNION SELECT date FROM wellness
-      UNION SELECT date FROM rpe
+      SELECT date FROM sessions WHERE team_id = $1
+      UNION
+      SELECT w.date
+      FROM wellness w
+      JOIN team_memberships tm ON tm.user_id = w.player_id
+      WHERE tm.team_id = $1 AND tm.role = 'player'
+      UNION
+      SELECT r.date
+      FROM rpe r
+      JOIN team_memberships tm ON tm.user_id = r.player_id
+      WHERE tm.team_id = $1 AND tm.role = 'player'
     ) t ORDER BY date DESC
-  `);
+  `, [teamId]);
 
   const map = new Map();
   for (const row of rows) {
@@ -155,14 +163,14 @@ async function getAvailableWeeks() {
   return Array.from(map.values()).sort((a, b) => b.week_start.localeCompare(a.week_start));
 }
 
-async function getTeamScatter(since, until) {
+async function getTeamScatter(teamId, since, until) {
   const wellnessQ = until
-    ? pool.query(`SELECT w.player_id, u.name, ROUND(AVG(w.wellness_score)::numeric,1) as ws FROM wellness w JOIN users u ON w.player_id=u.id WHERE w.date>=$1 AND w.date<=$2 GROUP BY w.player_id, u.name`, [since, until])
-    : pool.query(`SELECT w.player_id, u.name, ROUND(AVG(w.wellness_score)::numeric,1) as ws FROM wellness w JOIN users u ON w.player_id=u.id WHERE w.date>=$1 GROUP BY w.player_id, u.name`, [since]);
+    ? pool.query(`SELECT w.player_id, u.name, ROUND(AVG(w.wellness_score)::numeric,1) as ws FROM wellness w JOIN users u ON w.player_id=u.id JOIN team_memberships tm ON tm.user_id=u.id WHERE tm.team_id=$1 AND tm.role='player' AND w.date>=$2 AND w.date<=$3 GROUP BY w.player_id, u.name`, [teamId, since, until])
+    : pool.query(`SELECT w.player_id, u.name, ROUND(AVG(w.wellness_score)::numeric,1) as ws FROM wellness w JOIN users u ON w.player_id=u.id JOIN team_memberships tm ON tm.user_id=u.id WHERE tm.team_id=$1 AND tm.role='player' AND w.date>=$2 GROUP BY w.player_id, u.name`, [teamId, since]);
 
   const rpeQ = until
-    ? pool.query(`SELECT player_id, ROUND(AVG(rpe)::numeric,2) as rpe FROM rpe WHERE date>=$1 AND date<=$2 GROUP BY player_id`, [since, until])
-    : pool.query(`SELECT player_id, ROUND(AVG(rpe)::numeric,2) as rpe FROM rpe WHERE date>=$1 GROUP BY player_id`, [since]);
+    ? pool.query(`SELECT r.player_id, ROUND(AVG(r.rpe)::numeric,2) as rpe FROM rpe r JOIN team_memberships tm ON tm.user_id=r.player_id WHERE tm.team_id=$1 AND tm.role='player' AND r.date>=$2 AND r.date<=$3 GROUP BY r.player_id`, [teamId, since, until])
+    : pool.query(`SELECT r.player_id, ROUND(AVG(r.rpe)::numeric,2) as rpe FROM rpe r JOIN team_memberships tm ON tm.user_id=r.player_id WHERE tm.team_id=$1 AND tm.role='player' AND r.date>=$2 GROUP BY r.player_id`, [teamId, since]);
 
   const [{ rows: wellnessRows }, { rows: rpeRows }] = await Promise.all([wellnessQ, rpeQ]);
 
@@ -176,11 +184,17 @@ async function getTeamScatter(since, until) {
   return { scatter, avgWS: Math.round(avgWS || 0), avgRPE: Math.round((avgRPE || 0) * 10) / 10 };
 }
 
-async function buildWeeklyPlayerReport(currentWeekStart) {
+async function buildWeeklyPlayerReport(teamId, currentWeekStart) {
   const currentWeekEnd = new Date(new Date(`${currentWeekStart}T12:00:00`).getTime() + 6 * 86400000).toISOString().split('T')[0];
   const baselineSince  = new Date(new Date(`${currentWeekStart}T12:00:00`).getTime() - 35 * 86400000).toISOString().split('T')[0];
 
-  const { rows: players } = await pool.query("SELECT id, name FROM users WHERE role='player' ORDER BY name");
+  const { rows: players } = await pool.query(`
+    SELECT u.id, u.name
+    FROM users u
+    JOIN team_memberships tm ON tm.user_id = u.id
+    WHERE tm.team_id=$1 AND tm.role='player'
+    ORDER BY u.name
+  `, [teamId]);
 
   const report = await Promise.all(players.map(async player => {
     const [{ rows: wellnessRows }, { rows: rpeRows }] = await Promise.all([
@@ -235,6 +249,7 @@ async function buildWeeklyPlayerReport(currentWeekStart) {
 
 router.get('/team', requireCoach, async (req, res) => {
   try {
+    const teamId = req.user.team_id;
     const { days = 14, week_start } = req.query;
     const currentWeekStart = week_start || getMonday(new Date()).toISOString().split('T')[0];
     const since = week_start
@@ -245,18 +260,18 @@ router.get('/team', requireCoach, async (req, res) => {
       : null;
 
     const sessionsQ = until
-      ? pool.query('SELECT * FROM sessions WHERE date>=$1 AND date<=$2 ORDER BY date', [since, until])
-      : pool.query('SELECT * FROM sessions WHERE date>=$1 ORDER BY date', [since]);
+      ? pool.query('SELECT * FROM sessions WHERE team_id=$1 AND date>=$2 AND date<=$3 ORDER BY date', [teamId, since, until])
+      : pool.query('SELECT * FROM sessions WHERE team_id=$1 AND date>=$2 ORDER BY date', [teamId, since]);
 
     const wellnessQ = until
-      ? pool.query(`SELECT w.date, ROUND(AVG(w.wellness_score)::numeric,1) as avg_ws, ROUND(AVG(w.fatiga)::numeric,2) as avg_fatiga, ROUND(AVG(w.sueno_calidad)::numeric,2) as avg_sueno, ROUND(AVG(w.estres)::numeric,2) as avg_estres, ROUND(AVG(w.motivacion)::numeric,2) as avg_motivacion, ROUND(AVG(w.dano_muscular)::numeric,2) as avg_dano, COUNT(*) as responses FROM wellness w WHERE w.date>=$1 AND w.date<=$2 GROUP BY w.date ORDER BY w.date`, [since, until])
-      : pool.query(`SELECT w.date, ROUND(AVG(w.wellness_score)::numeric,1) as avg_ws, ROUND(AVG(w.fatiga)::numeric,2) as avg_fatiga, ROUND(AVG(w.sueno_calidad)::numeric,2) as avg_sueno, ROUND(AVG(w.estres)::numeric,2) as avg_estres, ROUND(AVG(w.motivacion)::numeric,2) as avg_motivacion, ROUND(AVG(w.dano_muscular)::numeric,2) as avg_dano, COUNT(*) as responses FROM wellness w WHERE w.date>=$1 GROUP BY w.date ORDER BY w.date`, [since]);
+      ? pool.query(`SELECT w.date, ROUND(AVG(w.wellness_score)::numeric,1) as avg_ws, ROUND(AVG(w.fatiga)::numeric,2) as avg_fatiga, ROUND(AVG(w.sueno_calidad)::numeric,2) as avg_sueno, ROUND(AVG(w.estres)::numeric,2) as avg_estres, ROUND(AVG(w.motivacion)::numeric,2) as avg_motivacion, ROUND(AVG(w.dano_muscular)::numeric,2) as avg_dano, COUNT(*) as responses FROM wellness w JOIN team_memberships tm ON tm.user_id=w.player_id WHERE tm.team_id=$1 AND tm.role='player' AND w.date>=$2 AND w.date<=$3 GROUP BY w.date ORDER BY w.date`, [teamId, since, until])
+      : pool.query(`SELECT w.date, ROUND(AVG(w.wellness_score)::numeric,1) as avg_ws, ROUND(AVG(w.fatiga)::numeric,2) as avg_fatiga, ROUND(AVG(w.sueno_calidad)::numeric,2) as avg_sueno, ROUND(AVG(w.estres)::numeric,2) as avg_estres, ROUND(AVG(w.motivacion)::numeric,2) as avg_motivacion, ROUND(AVG(w.dano_muscular)::numeric,2) as avg_dano, COUNT(*) as responses FROM wellness w JOIN team_memberships tm ON tm.user_id=w.player_id WHERE tm.team_id=$1 AND tm.role='player' AND w.date>=$2 GROUP BY w.date ORDER BY w.date`, [teamId, since]);
 
     const rpeQ = until
-      ? pool.query(`SELECT r.date, ROUND(AVG(r.rpe)::numeric,2) as avg_rpe, ROUND(AVG(r.srpe)::numeric,1) as avg_srpe, COUNT(*) as responses FROM rpe r WHERE r.date>=$1 AND r.date<=$2 GROUP BY r.date ORDER BY r.date`, [since, until])
-      : pool.query(`SELECT r.date, ROUND(AVG(r.rpe)::numeric,2) as avg_rpe, ROUND(AVG(r.srpe)::numeric,1) as avg_srpe, COUNT(*) as responses FROM rpe r WHERE r.date>=$1 GROUP BY r.date ORDER BY r.date`, [since]);
+      ? pool.query(`SELECT r.date, ROUND(AVG(r.rpe)::numeric,2) as avg_rpe, ROUND(AVG(r.srpe)::numeric,1) as avg_srpe, COUNT(*) as responses FROM rpe r JOIN team_memberships tm ON tm.user_id=r.player_id WHERE tm.team_id=$1 AND tm.role='player' AND r.date>=$2 AND r.date<=$3 GROUP BY r.date ORDER BY r.date`, [teamId, since, until])
+      : pool.query(`SELECT r.date, ROUND(AVG(r.rpe)::numeric,2) as avg_rpe, ROUND(AVG(r.srpe)::numeric,1) as avg_srpe, COUNT(*) as responses FROM rpe r JOIN team_memberships tm ON tm.user_id=r.player_id WHERE tm.team_id=$1 AND tm.role='player' AND r.date>=$2 GROUP BY r.date ORDER BY r.date`, [teamId, since]);
 
-    const matchDatesQ = pool.query(`SELECT DISTINCT date FROM sessions WHERE is_match=1 OR match_day_type IN ('MD','MD(H)','MD(A)') ORDER BY date`);
+    const matchDatesQ = pool.query(`SELECT DISTINCT date FROM sessions WHERE team_id=$1 AND (is_match=1 OR match_day_type IN ('MD','MD(H)','MD(A)')) ORDER BY date`, [teamId]);
 
     const [{ rows: sessions }, { rows: wellnessByDate }, { rows: rpeByDate }, { rows: matchDatesRows }] =
       await Promise.all([sessionsQ, wellnessQ, rpeQ, matchDatesQ]);
@@ -290,12 +305,12 @@ router.get('/team', requireCoach, async (req, res) => {
       matchDates
     );
 
-    const { rows: [{ c: total_players }] } = await pool.query("SELECT COUNT(*) as c FROM users WHERE role='player'");
+    const { rows: [{ c: total_players }] } = await pool.query("SELECT COUNT(*) as c FROM team_memberships WHERE team_id=$1 AND role='player'", [teamId]);
 
     const [scatterData, weeklyReport, availableWeeks] = await Promise.all([
-      getTeamScatter(since, until),
-      buildWeeklyPlayerReport(currentWeekStart),
-      getAvailableWeeks(),
+      getTeamScatter(teamId, since, until),
+      buildWeeklyPlayerReport(teamId, currentWeekStart),
+      getAvailableWeeks(teamId),
     ]);
 
     res.json({
@@ -321,9 +336,16 @@ router.get('/me', requireAuth, async (req, res) => {
 
 // ── Player detail ─────────────────────────────────────────────────────────────
 
-async function getPlayerDetail(id, res) {
+async function getPlayerDetail(id, res, teamId = null) {
   try {
-    const { rows: [player] } = await pool.query('SELECT id, name FROM users WHERE id=$1 AND role=$2', [id, 'player']);
+    const { rows: [player] } = teamId
+      ? await pool.query(`
+          SELECT u.id, u.name
+          FROM users u
+          JOIN team_memberships tm ON tm.user_id = u.id
+          WHERE u.id=$1 AND u.role=$2 AND tm.team_id=$3 AND tm.role='player'
+        `, [id, 'player', teamId])
+      : await pool.query('SELECT id, name FROM users WHERE id=$1 AND role=$2', [id, 'player']);
     if (!player) return res.status(404).json({ error: 'Jugador no encontrado' });
 
     const since60 = new Date(Date.now() - 60 * 86400000).toISOString().split('T')[0];
@@ -363,19 +385,33 @@ async function getPlayerDetail(id, res) {
 }
 
 router.get('/player/:id', requireCoach, (req, res) => {
-  getPlayerDetail(req.params.id, res);
+  getPlayerDetail(req.params.id, res, req.user.team_id);
 });
 
 // ── Players list with latest status ──────────────────────────────────────────
 
 router.get('/players', requireCoach, async (req, res) => {
   try {
+    const teamId = req.user.team_id;
     const selectedDate = req.query.date || new Date().toISOString().split('T')[0];
     const since28 = new Date(new Date(`${selectedDate}T12:00:00`).getTime() - 28 * 86400000).toISOString().split('T')[0];
 
     const [{ rows: players }, { rows: dateBoundsRows }] = await Promise.all([
-      pool.query("SELECT id, name FROM users WHERE role='player' ORDER BY name"),
-      pool.query(`SELECT MIN(date) as min_date, MAX(date) as max_date FROM (SELECT date FROM wellness UNION ALL SELECT date FROM rpe) t`),
+      pool.query(`
+        SELECT u.id, u.name
+        FROM users u
+        JOIN team_memberships tm ON tm.user_id = u.id
+        WHERE tm.team_id=$1 AND tm.role='player'
+        ORDER BY u.name
+      `, [teamId]),
+      pool.query(`
+        SELECT MIN(date) as min_date, MAX(date) as max_date
+        FROM (
+          SELECT w.date FROM wellness w JOIN team_memberships tm ON tm.user_id=w.player_id WHERE tm.team_id=$1 AND tm.role='player'
+          UNION ALL
+          SELECT r.date FROM rpe r JOIN team_memberships tm ON tm.user_id=r.player_id WHERE tm.team_id=$1 AND tm.role='player'
+        ) t
+      `, [teamId]),
     ]);
 
     const dateBounds = dateBoundsRows[0];

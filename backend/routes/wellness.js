@@ -9,6 +9,7 @@ const DEFAULT_TEAM_ID = 1;
 function getTeamId(req) {
   const rawTeamId = req.query.teamId ?? req.body?.team_id ?? req.body?.teamId;
   const parsed = Number(rawTeamId);
+  if (req.user?.team_id) return req.user.team_id;
   return Number.isInteger(parsed) && parsed > 0 ? parsed : DEFAULT_TEAM_ID;
 }
 
