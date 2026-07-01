@@ -5,8 +5,6 @@ import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
   const [mode, setMode] = useState('player');
-  const [playerEmail, setPlayerEmail] = useState('');
-  const [playerPassword, setPlayerPassword] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -20,8 +18,9 @@ export default function Login() {
     setLoading(true);
     try {
       const res = mode === 'player'
-        ? await api.post('/auth/player', { email: playerEmail, password: playerPassword })
+        ? null
         : await api.post('/auth/coach', { email, password });
+      if (!res) return;
 
       login(res.data.user, res.data.token);
       navigate(mode === 'coach' ? '/coach' : '/player');
@@ -67,30 +66,9 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'player' ? (
-              <>
-                <div>
-                  <label className="label">Email</label>
-                  <input
-                    type="email"
-                    className="input"
-                    placeholder="jugador@club.com"
-                    value={playerEmail}
-                    onChange={e => setPlayerEmail(e.target.value)}
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="label">Contrasena</label>
-                  <input
-                    type="password"
-                    className="input"
-                    placeholder="Contrasena"
-                    value={playerPassword}
-                    onChange={e => setPlayerPassword(e.target.value)}
-                    required
-                  />
-                </div>
-              </>
+              <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-sm text-slate-600 leading-relaxed">
+                Los jugadores entran desde el enlace privado de su equipo con nombre y PIN.
+              </div>
             ) : (
               <>
                 <div>
@@ -123,7 +101,7 @@ export default function Login() {
               </div>
             )}
 
-            <button type="submit" disabled={loading} className="btn-primary w-full text-center mt-2">
+            <button type="submit" disabled={loading || mode === 'player'} className="btn-primary w-full text-center mt-2">
               {loading ? 'Cargando...' : 'Entrar'}
             </button>
           </form>

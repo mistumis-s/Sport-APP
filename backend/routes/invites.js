@@ -1,6 +1,5 @@
 const crypto = require('crypto');
 const express = require('express');
-const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { pool } = require('../db');
 const { requireCoach } = require('../middleware/auth');
@@ -67,25 +66,14 @@ router.post('/:token/register', async (req, res) => {
   if (invite.role !== 'player') return res.status(400).json({ error: 'Invitacion no valida para jugador' });
 
   const name = String(req.body.name || '').trim();
-  const email = String(req.body.email || '').trim().toLowerCase();
-  const password = String(req.body.password || '');
+  const pin = String(req.body.pin || '').trim();
 
   if (!name) return res.status(400).json({ error: 'El nombre es obligatorio' });
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'Email no valido' });
-  if (password.length < 8) return res.status(400).json({ error: 'La contrasena debe tener al menos 8 caracteres' });
+  if (!/^\d{4,6}$/.test(pin)) return res.status(400).json({ error: 'El PIN debe tener entre 4 y 6 cifras' });
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
-
-    const { rows: [existingEmail] } = await client.query(
-      'SELECT id FROM users WHERE LOWER(email)=LOWER($1) LIMIT 1',
-      [email]
-    );
-    if (existingEmail) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'Ya existe un usuario con ese email' });
-    }
 
     const { rows: [existingName] } = await client.query(`
       SELECT u.id
@@ -99,12 +87,11 @@ router.post('/:token/register', async (req, res) => {
       return res.status(409).json({ error: 'Ya existe un jugador con ese nombre en el equipo' });
     }
 
-    const passwordHash = bcrypt.hashSync(password, 10);
     const { rows: [user] } = await client.query(`
-      INSERT INTO users (name, email, role, password, team, must_change_password)
-      VALUES ($1, $2, 'player', $3, $4, 0)
-      RETURNING id, name, email, role
-    `, [name.toUpperCase(), email, passwordHash, invite.team_name]);
+      INSERT INTO users (name, role, pin, team, must_change_password)
+      VALUES ($1, 'player', $2, $3, 0)
+      RETURNING id, name, role
+    `, [name.toUpperCase(), pin, invite.team_name]);
 
     await client.query(
       'INSERT INTO team_memberships (user_id, team_id, role) VALUES ($1, $2, $3)',
@@ -121,7 +108,7 @@ router.post('/:token/register', async (req, res) => {
 
     return res.status(201).json({
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: 'player', team_id: invite.team_id },
+      user: { id: user.id, name: user.name, role: 'player', team_id: invite.team_id },
     });
   } catch (error) {
     await client.query('ROLLBACK');
@@ -130,6 +117,38 @@ router.post('/:token/register', async (req, res) => {
   } finally {
     client.release();
   }
+});
+
+router.post('/:token/login', async (req, res) => {
+  const invite = await getInvite(req.params.token);
+  if (!invite) return res.status(404).json({ error: 'Invitacion no valida' });
+  if (invite.role !== 'player') return res.status(400).json({ error: 'Invitacion no valida para jugador' });
+
+  const name = String(req.body.name || '').trim().toUpperCase();
+  const pin = String(req.body.pin || '').trim();
+  if (!name || !pin) return res.status(400).json({ error: 'Faltan datos' });
+
+  const { rows: [user] } = await pool.query(`
+    SELECT u.id, u.name, u.role, u.pin
+    FROM users u
+    JOIN team_memberships tm ON tm.user_id = u.id
+    WHERE tm.team_id=$1 AND tm.role='player' AND u.role='player' AND u.name=$2
+    LIMIT 1
+  `, [invite.team_id, name]);
+
+  if (!user) return res.status(401).json({ error: 'Jugador no encontrado en este equipo' });
+  if (user.pin !== pin) return res.status(401).json({ error: 'PIN incorrecto' });
+
+  const jwtToken = jwt.sign(
+    { id: user.id, name: user.name, role: 'player', team_id: invite.team_id },
+    SECRET,
+    { expiresIn: '7d' }
+  );
+
+  return res.json({
+    token: jwtToken,
+    user: { id: user.id, name: user.name, role: 'player', team_id: invite.team_id },
+  });
 });
 
 module.exports = router;

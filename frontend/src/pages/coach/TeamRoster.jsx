@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
 
-const INITIAL_FORM = { name: '', email: '' };
+const INITIAL_FORM = { name: '', pin: '' };
 
 export default function TeamRoster() {
   const [players, setPlayers] = useState([]);
@@ -63,8 +63,8 @@ export default function TeamRoster() {
     const text = [
       'Acceso Sport APP',
       `URL: ${window.location.origin}`,
-      `Email: ${credentials.email}`,
-      `Contrasena: ${credentials.temporary_password}`,
+      `Nombre: ${credentials.name}`,
+      `PIN: ${credentials.pin}`,
     ].join('\n');
     await navigator.clipboard.writeText(text);
     setMessage('Credenciales copiadas');
@@ -115,8 +115,8 @@ export default function TeamRoster() {
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-bold text-emerald-700">Acceso creado</p>
-              <p className="text-sm text-slate-600 mt-1">Email: {credentials.email}</p>
-              <p className="text-sm text-slate-600">Contrasena temporal: {credentials.temporary_password}</p>
+              <p className="text-sm text-slate-600 mt-1">Nombre: {credentials.name}</p>
+              <p className="text-sm text-slate-600">PIN: {credentials.pin}</p>
             </div>
             <button type="button" className="btn-primary" onClick={copyCredentials}>
               Copiar
@@ -127,7 +127,7 @@ export default function TeamRoster() {
 
       <div className="card">
         <h2 className="text-sm font-bold text-slate-800 mb-3">Anadir jugador manualmente</h2>
-        <form onSubmit={handleSubmit} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+        <form onSubmit={handleSubmit} className="grid gap-3 sm:grid-cols-[1fr_140px_auto]">
           <input
             type="text"
             value={form.name}
@@ -137,10 +137,13 @@ export default function TeamRoster() {
             required
           />
           <input
-            type="email"
-            value={form.email}
-            onChange={e => setForm(current => ({ ...current, email: e.target.value }))}
-            placeholder="Email"
+            type="password"
+            inputMode="numeric"
+            minLength={4}
+            maxLength={6}
+            value={form.pin}
+            onChange={e => setForm(current => ({ ...current, pin: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+            placeholder="PIN"
             className="input"
             required
           />
@@ -171,7 +174,7 @@ export default function TeamRoster() {
                 <div className="min-w-0">
                   <p className="font-bold text-slate-800 truncate">{player.name}</p>
                   <div className="flex flex-wrap gap-2 mt-1 text-xs text-slate-400 font-medium">
-                    <span>{player.email || 'Sin email'}</span>
+                    <span>{player.pin ? `PIN ${player.pin}` : 'Sin PIN'}</span>
                     <span>{player.wellness_entries} wellness</span>
                     <span>{player.rpe_entries} RPE</span>
                   </div>

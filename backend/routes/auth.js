@@ -8,10 +8,18 @@ const router = express.Router();
 const SECRET = process.env.JWT_SECRET || 'sport_secret_2024';
 
 router.post('/player', async (req, res) => {
-  const { email, password, name, pin } = req.body;
+  const { email, password, name, pin, team_id } = req.body;
   if ((!email || !password) && (!name || !pin)) return res.status(400).json({ error: 'Faltan datos' });
 
-  const { rows: [user] } = email
+  const { rows: [user] } = team_id && name
+    ? await pool.query(`
+        SELECT u.*
+        FROM users u
+        JOIN team_memberships tm ON tm.user_id = u.id
+        WHERE tm.team_id=$1 AND tm.role='player' AND u.name=$2 AND u.role='player'
+        LIMIT 1
+      `, [team_id, name.toUpperCase()])
+    : email
     ? await pool.query('SELECT * FROM users WHERE LOWER(email)=LOWER($1) AND role=$2', [email, 'player'])
     : await pool.query('SELECT * FROM users WHERE name=$1 AND role=$2', [name.toUpperCase(), 'player']);
   if (!user) return res.status(401).json({ error: 'Jugador no encontrado' });
@@ -217,7 +225,7 @@ router.get('/players', async (req, res) => {
 router.get('/coach/players', requireCoach, async (req, res) => {
   const { rows } = await pool.query(`
     SELECT
-      u.id, u.name, u.email, u.created_at,
+      u.id, u.name, u.pin, u.created_at,
       (SELECT COUNT(*) FROM wellness w WHERE w.player_id = u.id) as wellness_entries,
       (SELECT COUNT(*) FROM rpe r WHERE r.player_id = u.id) as rpe_entries
     FROM team_memberships tm
@@ -230,11 +238,10 @@ router.get('/coach/players', requireCoach, async (req, res) => {
 
 router.post('/coach/players', requireCoach, async (req, res) => {
   const normalizedName = String(req.body.name || '').trim().toUpperCase();
-  const normalizedEmail = String(req.body.email || '').trim().toLowerCase();
-  const temporaryPassword = String(req.body.password || '').trim() || Math.random().toString(36).slice(2, 12);
+  const normalizedPin = String(req.body.pin || '').trim();
 
   if (!normalizedName) return res.status(400).json({ error: 'El nombre es obligatorio' });
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return res.status(400).json({ error: 'Email no valido' });
+  if (!/^\d{4,6}$/.test(normalizedPin)) return res.status(400).json({ error: 'El PIN debe tener entre 4 y 6 cifras' });
 
   const { rows: [existing] } = await pool.query(
     `SELECT u.id
@@ -245,12 +252,6 @@ router.post('/coach/players', requireCoach, async (req, res) => {
   );
   if (existing) return res.status(409).json({ error: 'Ya existe un jugador con ese nombre' });
 
-  const { rows: [existingEmail] } = await pool.query(
-    'SELECT id FROM users WHERE LOWER(email)=LOWER($1) LIMIT 1',
-    [normalizedEmail]
-  );
-  if (existingEmail) return res.status(409).json({ error: 'Ya existe un usuario con ese email' });
-
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -260,10 +261,9 @@ router.post('/coach/players', requireCoach, async (req, res) => {
       return res.status(400).json({ error: 'Equipo no encontrado para este entrenador' });
     }
 
-    const passwordHash = bcrypt.hashSync(temporaryPassword, 10);
     const { rows: [u] } = await client.query(
-      "INSERT INTO users (name, email, role, password, team, must_change_password) VALUES ($1, $2, 'player', $3, $4, 1) RETURNING id, name, email, created_at",
-      [normalizedName, normalizedEmail, passwordHash, team.name]
+      "INSERT INTO users (name, role, pin, team, must_change_password) VALUES ($1, 'player', $2, $3, 0) RETURNING id, name, pin, created_at",
+      [normalizedName, normalizedPin, team.name]
     );
     await client.query(
       'INSERT INTO team_memberships (user_id, team_id, role) VALUES ($1, $2, $3)',
@@ -273,8 +273,8 @@ router.post('/coach/players', requireCoach, async (req, res) => {
     res.status(201).json({
       player: u,
       credentials: {
-        email: u.email,
-        temporary_password: temporaryPassword,
+        name: u.name,
+        pin: u.pin,
       },
     });
   } catch (e) {

@@ -5,8 +5,9 @@ import { useAuth } from '../context/AuthContext';
 
 export default function JoinTeam() {
   const { token } = useParams();
+  const [mode, setMode] = useState('login');
   const [invite, setInvite] = useState(null);
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
+  const [form, setForm] = useState({ name: '', pin: '', confirmPin: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -21,28 +22,30 @@ export default function JoinTeam() {
   }, [token]);
 
   function update(field, value) {
-    setForm(prev => ({ ...prev, [field]: value }));
+    const clean = field.toLowerCase().includes('pin') ? value.replace(/\D/g, '').slice(0, 6) : value;
+    setForm(prev => ({ ...prev, [field]: clean }));
   }
 
   async function submit(e) {
     e.preventDefault();
     setError('');
-    if (form.password !== form.confirm) {
-      setError('Las contrasenas no coinciden');
+
+    if (mode === 'register' && form.pin !== form.confirmPin) {
+      setError('Los PIN no coinciden');
       return;
     }
 
     setSaving(true);
     try {
-      const res = await api.post(`/invites/${token}/register`, {
+      const endpoint = mode === 'register' ? 'register' : 'login';
+      const res = await api.post(`/invites/${token}/${endpoint}`, {
         name: form.name,
-        email: form.email,
-        password: form.password,
+        pin: form.pin,
       });
       login(res.data.user, res.data.token);
       navigate('/player', { replace: true });
     } catch (err) {
-      setError(err.response?.data?.error || 'No se pudo completar el registro');
+      setError(err.response?.data?.error || 'No se pudo completar el acceso');
     } finally {
       setSaving(false);
     }
@@ -58,16 +61,34 @@ export default function JoinTeam() {
         {invite ? (
           <>
             <div className="mb-5">
-              <p className="text-sm font-semibold text-red-500">Registro de jugador</p>
+              <p className="text-sm font-semibold text-red-500">Acceso de jugador</p>
               <h1 className="text-2xl font-extrabold text-slate-900">{invite.team.name}</h1>
               <p className="text-sm text-slate-400 mt-1">{invite.team.category || invite.team.club_name || 'Equipo'}</p>
             </div>
 
+            <div className="flex bg-slate-100 rounded-xl p-1 mb-5">
+              <button
+                type="button"
+                className={`flex-1 py-2 rounded-lg text-sm font-bold ${mode === 'login' ? 'bg-white text-red-500 shadow-sm' : 'text-slate-500'}`}
+                onClick={() => { setMode('login'); setError(''); }}
+              >
+                Entrar
+              </button>
+              <button
+                type="button"
+                className={`flex-1 py-2 rounded-lg text-sm font-bold ${mode === 'register' ? 'bg-white text-red-500 shadow-sm' : 'text-slate-500'}`}
+                onClick={() => { setMode('register'); setError(''); }}
+              >
+                Registrarme
+              </button>
+            </div>
+
             <form onSubmit={submit} className="space-y-4">
-              <Field label="Nombre completo" value={form.name} onChange={v => update('name', v)} required />
-              <Field label="Email" type="email" value={form.email} onChange={v => update('email', v)} required />
-              <Field label="Contrasena" type="password" value={form.password} onChange={v => update('password', v)} minLength={8} required />
-              <Field label="Repite contrasena" type="password" value={form.confirm} onChange={v => update('confirm', v)} minLength={8} required />
+              <Field label="Nombre y apellidos" value={form.name} onChange={v => update('name', v)} required />
+              <Field label="PIN" type="password" inputMode="numeric" value={form.pin} onChange={v => update('pin', v)} minLength={4} maxLength={6} required />
+              {mode === 'register' && (
+                <Field label="Repite PIN" type="password" inputMode="numeric" value={form.confirmPin} onChange={v => update('confirmPin', v)} minLength={4} maxLength={6} required />
+              )}
 
               {error && (
                 <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-red-600 text-sm font-medium">
@@ -76,7 +97,7 @@ export default function JoinTeam() {
               )}
 
               <button className="btn-primary w-full" disabled={saving}>
-                {saving ? 'Creando cuenta...' : 'Crear cuenta'}
+                {saving ? 'Procesando...' : mode === 'register' ? 'Crear acceso' : 'Entrar'}
               </button>
             </form>
           </>
@@ -91,7 +112,7 @@ export default function JoinTeam() {
   );
 }
 
-function Field({ label, value, onChange, type = 'text', required = false, minLength }) {
+function Field({ label, value, onChange, type = 'text', required = false, minLength, maxLength, inputMode }) {
   return (
     <div>
       <label className="label">{label}</label>
@@ -102,6 +123,8 @@ function Field({ label, value, onChange, type = 'text', required = false, minLen
         onChange={e => onChange(e.target.value)}
         required={required}
         minLength={minLength}
+        maxLength={maxLength}
+        inputMode={inputMode}
       />
     </div>
   );
