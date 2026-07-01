@@ -21,6 +21,54 @@ function generatePassword() {
   return crypto.randomBytes(9).toString('base64url');
 }
 
+async function createCoach(client, { teamId, teamName, coachName, coachEmail, coachPassword }) {
+  const normalizedName = String(coachName || '').trim();
+  const normalizedEmail = String(coachEmail || '').trim().toLowerCase();
+  const temporaryPassword = String(coachPassword || '').trim() || generatePassword();
+
+  if (!normalizedName) {
+    const error = new Error('coach_name es obligatorio');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+    const error = new Error('coach_email no es valido');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const { rows: [existingCoach] } = await client.query(
+    'SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1',
+    [normalizedEmail]
+  );
+  if (existingCoach) {
+    const error = new Error('Ya existe un usuario con ese email');
+    error.statusCode = 409;
+    throw error;
+  }
+
+  const passwordHash = bcrypt.hashSync(temporaryPassword, 10);
+  const { rows: [coach] } = await client.query(
+    `INSERT INTO users (name, email, role, password, team)
+     VALUES ($1, $2, 'coach', $3, $4)
+     RETURNING id, name, email, role`,
+    [normalizedName.toUpperCase(), normalizedEmail, passwordHash, teamName]
+  );
+
+  await client.query(
+    'INSERT INTO team_memberships (user_id, team_id, role) VALUES ($1, $2, $3)',
+    [coach.id, teamId, 'coach']
+  );
+
+  return {
+    coach,
+    credentials: {
+      email: coach.email,
+      temporary_password: temporaryPassword,
+    },
+  };
+}
+
 router.post('/teams', requireAdmin, async (req, res) => {
   const teamName = String(req.body.team_name || '').trim();
   const clubName = String(req.body.club_name || teamName).trim();
@@ -48,46 +96,67 @@ router.post('/teams', requireAdmin, async (req, res) => {
       return res.status(409).json({ error: 'Ya existe un equipo con ese nombre' });
     }
 
-    const { rows: [existingCoach] } = await client.query(
-      'SELECT id FROM users WHERE LOWER(email) = LOWER($1) LIMIT 1',
-      [coachEmail]
-    );
-    if (existingCoach) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ error: 'Ya existe un usuario con ese email' });
-    }
-
     const { rows: [team] } = await client.query(
       'INSERT INTO teams (name, club_name, category) VALUES ($1, $2, $3) RETURNING id, name, club_name, category',
       [teamName, clubName, category]
     );
 
-    const passwordHash = bcrypt.hashSync(temporaryPassword, 10);
-    const { rows: [coach] } = await client.query(
-      `INSERT INTO users (name, email, role, password, team)
-       VALUES ($1, $2, 'coach', $3, $4)
-       RETURNING id, name, email, role`,
-      [coachName.toUpperCase(), coachEmail, passwordHash, teamName]
-    );
-
-    await client.query(
-      'INSERT INTO team_memberships (user_id, team_id, role) VALUES ($1, $2, $3)',
-      [coach.id, team.id, 'coach']
-    );
+    const { coach, credentials } = await createCoach(client, {
+      teamId: team.id,
+      teamName: team.name,
+      coachName,
+      coachEmail,
+      coachPassword: temporaryPassword,
+    });
 
     await client.query('COMMIT');
     return res.status(201).json({
       team,
       coach,
-      credentials: {
-        email: coach.email,
-        temporary_password: temporaryPassword,
-      },
+      credentials,
     });
   } catch (error) {
     await client.query('ROLLBACK');
     console.error(error);
-    return res.status(500).json({ error: 'No se pudo crear el equipo' });
+    return res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : 'No se pudo crear el equipo' });
+  } finally {
+    client.release();
+  }
+});
+
+router.post('/teams/:teamId/coaches', requireAdmin, async (req, res) => {
+  const teamId = Number(req.params.teamId);
+  if (!Number.isInteger(teamId) || teamId <= 0) {
+    return res.status(400).json({ error: 'teamId no es valido' });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const { rows: [team] } = await client.query(
+      'SELECT id, name FROM teams WHERE id=$1 LIMIT 1',
+      [teamId]
+    );
+    if (!team) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'Equipo no encontrado' });
+    }
+
+    const result = await createCoach(client, {
+      teamId: team.id,
+      teamName: team.name,
+      coachName: req.body.coach_name,
+      coachEmail: req.body.coach_email,
+      coachPassword: req.body.coach_password,
+    });
+
+    await client.query('COMMIT');
+    return res.status(201).json({ team, ...result });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error(error);
+    return res.status(error.statusCode || 500).json({ error: error.statusCode ? error.message : 'No se pudo crear el entrenador' });
   } finally {
     client.release();
   }

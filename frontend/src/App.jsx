@@ -11,6 +11,7 @@ import SessionCreate from './pages/coach/SessionCreate';
 import PlayerDetail from './pages/coach/PlayerDetail';
 import PlayersList from './pages/coach/PlayersList';
 import TeamRoster from './pages/coach/TeamRoster';
+import AdminProvisioning from './pages/AdminProvisioning';
 import Navbar from './components/Navbar';
 
 function ProtectedRoute({ children, role }) {
@@ -28,6 +29,7 @@ function AppRoutes() {
       <div className="max-w-5xl mx-auto px-4 py-6">
         <Routes>
           <Route path="/" element={user ? <Navigate to={user.role === 'coach' ? '/coach' : '/player'} replace /> : <Login />} />
+          <Route path="/admin" element={<AdminProvisioning />} />
           <Route path="/player" element={<ProtectedRoute role="player"><PlayerHome /></ProtectedRoute>} />
           <Route path="/player/wellness" element={<ProtectedRoute role="player"><WellnessForm /></ProtectedRoute>} />
           <Route path="/player/rpe" element={<ProtectedRoute role="player"><RPEForm /></ProtectedRoute>} />
