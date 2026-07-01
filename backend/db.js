@@ -30,6 +30,7 @@ async function init() {
     CREATE TABLE IF NOT EXISTS users (
       id         SERIAL PRIMARY KEY,
       name       TEXT NOT NULL,
+      email      TEXT,
       role       TEXT NOT NULL CHECK(role IN ('player','coach')),
       pin        TEXT,
       password   TEXT,
@@ -101,6 +102,8 @@ async function init() {
     );
   `);
 
+  await ensureSchema();
+
   // Ensure default team exists
   const { rows: teams } = await pool.query("SELECT id FROM teams WHERE name = 'DH ÉLITE' LIMIT 1");
   if (teams.length === 0) {
@@ -145,6 +148,20 @@ async function init() {
   }
 
   console.log('✅ Database ready');
+}
+
+async function ensureSchema() {
+  await pool.query(`
+    ALTER TABLE users
+    ADD COLUMN IF NOT EXISTS email TEXT;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_unique
+    ON users (LOWER(email))
+    WHERE email IS NOT NULL;
+
+    CREATE INDEX IF NOT EXISTS idx_team_memberships_user_role
+    ON team_memberships(user_id, role);
+  `);
 }
 
 module.exports = { pool, init, calcWellnessScore };

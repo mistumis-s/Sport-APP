@@ -15,6 +15,7 @@ app.use('/api/wellness',  require('./routes/wellness'));
 app.use('/api/rpe',       require('./routes/rpe'));
 app.use('/api/fixtures',  require('./routes/fixtures'));
 app.use('/api/dashboard', require('./routes/dashboard'));
+app.use('/api/admin',     require('./routes/admin'));
 
 app.get('/api/health', (_, res) => res.json({ ok: true }));
 

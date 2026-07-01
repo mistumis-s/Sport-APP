@@ -8,6 +8,7 @@ export default function Login() {
   const [players, setPlayers] = useState([]);
   const [selectedPlayer, setSelectedPlayer] = useState('');
   const [pin, setPin] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -23,16 +24,14 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      let res;
-      if (mode === 'player') {
-        res = await api.post('/auth/player', { name: selectedPlayer, pin });
-      } else {
-        res = await api.post('/auth/coach', { password });
-      }
+      const res = mode === 'player'
+        ? await api.post('/auth/player', { name: selectedPlayer, pin })
+        : await api.post('/auth/coach', { email, password });
+
       login(res.data.user, res.data.token);
       navigate(mode === 'coach' ? '/coach' : '/player');
     } catch (err) {
-      setError(err.response?.data?.error || 'Error al iniciar sesión');
+      setError(err.response?.data?.error || 'Error al iniciar sesion');
     } finally {
       setLoading(false);
     }
@@ -41,19 +40,18 @@ export default function Login() {
   return (
     <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-slate-100 to-red-50">
       <div className="w-full max-w-sm">
-        {/* Logo */}
         <div className="text-center mb-8">
           <div className="w-20 h-20 bg-red-500 rounded-3xl flex items-center justify-center mx-auto mb-4 shadow-lg shadow-red-200">
-            <span className="text-4xl">🏉</span>
+            <span className="text-4xl">S</span>
           </div>
-          <h1 className="text-3xl font-extrabold text-slate-900">DH ÉLITE</h1>
+          <h1 className="text-3xl font-extrabold text-slate-900">Sport APP</h1>
           <p className="text-slate-400 text-sm mt-1 font-medium">Sport Performance Tracker</p>
         </div>
 
         <div className="card shadow-md border border-slate-100">
-          {/* Toggle */}
           <div className="flex bg-slate-100 rounded-xl p-1 mb-5">
             <button
+              type="button"
               className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all duration-200 ${
                 mode === 'player' ? 'bg-white text-red-500 shadow-sm' : 'text-slate-500'
               }`}
@@ -62,6 +60,7 @@ export default function Login() {
               Jugador
             </button>
             <button
+              type="button"
               className={`flex-1 py-2 rounded-lg text-sm font-bold transition-all duration-200 ${
                 mode === 'coach' ? 'bg-white text-red-500 shadow-sm' : 'text-slate-500'
               }`}
@@ -82,7 +81,7 @@ export default function Login() {
                     onChange={e => setSelectedPlayer(e.target.value)}
                     required
                   >
-                    <option value="">— Elige tu nombre —</option>
+                    <option value="">Elige tu nombre</option>
                     {players.map(p => (
                       <option key={p.id} value={p.name}>{p.name}</option>
                     ))}
@@ -94,28 +93,38 @@ export default function Login() {
                     type="password"
                     inputMode="numeric"
                     className="input text-center text-2xl tracking-widest"
-                    placeholder="• • • •"
+                    placeholder="0000"
                     value={pin}
                     onChange={e => setPin(e.target.value)}
                     maxLength={8}
                     required
                   />
-                  <p className="text-xs text-slate-400 mt-1.5 text-center">PIN por defecto: 1234</p>
                 </div>
               </>
             ) : (
-              <div>
-                <label className="label">Contraseña</label>
-                <input
-                  type="password"
-                  className="input"
-                  placeholder="Contraseña del preparador"
-                  value={password}
-                  onChange={e => setPassword(e.target.value)}
-                  required
-                />
-                <p className="text-xs text-slate-400 mt-1.5">Por defecto: coach123</p>
-              </div>
+              <>
+                <div>
+                  <label className="label">Email</label>
+                  <input
+                    type="email"
+                    className="input"
+                    placeholder="preparador@club.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label">Contrasena</label>
+                  <input
+                    type="password"
+                    className="input"
+                    placeholder="Contrasena del preparador"
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    required
+                  />
+                </div>
+              </>
             )}
 
             {error && (
@@ -125,7 +134,7 @@ export default function Login() {
             )}
 
             <button type="submit" disabled={loading} className="btn-primary w-full text-center mt-2">
-              {loading ? 'Cargando...' : 'Entrar →'}
+              {loading ? 'Cargando...' : 'Entrar'}
             </button>
           </form>
         </div>
