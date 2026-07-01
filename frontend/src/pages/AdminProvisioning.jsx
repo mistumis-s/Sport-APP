@@ -18,6 +18,7 @@ const emptyCoachForm = {
 export default function AdminProvisioning() {
   const [adminKey, setAdminKey] = useState(() => localStorage.getItem('admin_api_key') || '');
   const [teams, setTeams] = useState([]);
+  const [coaches, setCoaches] = useState([]);
   const [teamForm, setTeamForm] = useState(emptyTeamForm);
   const [coachForm, setCoachForm] = useState(emptyCoachForm);
   const [loading, setLoading] = useState(false);
@@ -37,8 +38,12 @@ export default function AdminProvisioning() {
   async function loadTeams() {
     setError('');
     try {
-      const res = await api.get('/admin/teams', { headers });
-      setTeams(res.data);
+      const [teamsRes, coachesRes] = await Promise.all([
+        api.get('/admin/teams', { headers }),
+        api.get('/admin/coaches', { headers }),
+      ]);
+      setTeams(teamsRes.data);
+      setCoaches(coachesRes.data);
     } catch (err) {
       setError(err.response?.data?.error || 'No se pudieron cargar los equipos');
     }
@@ -88,6 +93,26 @@ export default function AdminProvisioning() {
       await loadTeams();
     } catch (err) {
       setError(err.response?.data?.error || 'No se pudo crear el entrenador');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function resetCoachPassword(coach) {
+    const ok = window.confirm(`Generar nueva contrasena temporal para ${coach.name}?`);
+    if (!ok) return;
+
+    setLoading(true);
+    setError('');
+    setMessage('');
+    setCredentials(null);
+    try {
+      const res = await api.post(`/admin/coaches/${coach.id}/reset-password`, {}, { headers });
+      setCredentials(res.data.credentials);
+      setMessage(`Contrasena temporal generada para ${coach.email}`);
+      await loadTeams();
+    } catch (err) {
+      setError(err.response?.data?.error || 'No se pudo resetear la contrasena');
     } finally {
       setLoading(false);
     }
@@ -224,6 +249,62 @@ export default function AdminProvisioning() {
               {!teams.length && (
                 <tr>
                   <td className="py-6 text-slate-400" colSpan="5">Sin equipos cargados</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="card overflow-hidden">
+        <div className="flex items-center justify-between mb-4">
+          <div>
+            <h2 className="text-lg font-extrabold text-slate-900">Entrenadores</h2>
+            <p className="text-xs text-slate-400 mt-1">Las contrasenas actuales no se pueden ver; puedes generar una temporal nueva.</p>
+          </div>
+          <span className="text-xs font-bold text-slate-400">{coaches.length}</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-slate-500 border-b border-slate-100">
+                <th className="py-3 pr-4">Nombre</th>
+                <th className="py-3 pr-4">Email</th>
+                <th className="py-3 pr-4">Equipos</th>
+                <th className="py-3 pr-4">Estado</th>
+                <th className="py-3 pr-4"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {coaches.map(coach => (
+                <tr key={coach.id} className="border-b border-slate-50">
+                  <td className="py-3 pr-4 font-semibold text-slate-900">{coach.name}</td>
+                  <td className="py-3 pr-4 text-slate-600">{coach.email || '-'}</td>
+                  <td className="py-3 pr-4 text-slate-600">
+                    {(coach.teams || []).map(team => team.name).join(', ') || '-'}
+                  </td>
+                  <td className="py-3 pr-4">
+                    {coach.must_change_password ? (
+                      <span className="badge-yellow">Cambio pendiente</span>
+                    ) : (
+                      <span className="badge-green">Activa</span>
+                    )}
+                  </td>
+                  <td className="py-3 pr-4 text-right">
+                    <button
+                      type="button"
+                      className="btn-secondary text-xs"
+                      onClick={() => resetCoachPassword(coach)}
+                      disabled={loading}
+                    >
+                      Resetear
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {!coaches.length && (
+                <tr>
+                  <td className="py-6 text-slate-400" colSpan="5">Sin entrenadores cargados</td>
                 </tr>
               )}
             </tbody>

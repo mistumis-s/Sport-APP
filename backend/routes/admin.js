@@ -180,4 +180,60 @@ router.get('/teams', requireAdmin, async (_, res) => {
   res.json(rows);
 });
 
+router.get('/coaches', requireAdmin, async (_, res) => {
+  const { rows } = await pool.query(`
+    SELECT
+      u.id,
+      u.name,
+      u.email,
+      u.must_change_password,
+      u.created_at,
+      COALESCE(
+        json_agg(
+          json_build_object('id', t.id, 'name', t.name, 'category', t.category)
+          ORDER BY t.name
+        ) FILTER (WHERE t.id IS NOT NULL),
+        '[]'
+      ) AS teams
+    FROM users u
+    LEFT JOIN team_memberships tm ON tm.user_id = u.id AND tm.role = 'coach'
+    LEFT JOIN teams t ON t.id = tm.team_id
+    WHERE u.role = 'coach'
+    GROUP BY u.id
+    ORDER BY u.created_at DESC
+  `);
+  res.json(rows);
+});
+
+router.post('/coaches/:coachId/reset-password', requireAdmin, async (req, res) => {
+  const coachId = Number(req.params.coachId);
+  if (!Number.isInteger(coachId) || coachId <= 0) {
+    return res.status(400).json({ error: 'coachId no es valido' });
+  }
+
+  const temporaryPassword = String(req.body.password || '').trim() || generatePassword();
+  if (temporaryPassword.length < 8) {
+    return res.status(400).json({ error: 'La contrasena debe tener al menos 8 caracteres' });
+  }
+
+  const passwordHash = bcrypt.hashSync(temporaryPassword, 10);
+  const { rows: [coach] } = await pool.query(
+    `UPDATE users
+     SET password=$1, must_change_password=1
+     WHERE id=$2 AND role='coach'
+     RETURNING id, name, email, role, must_change_password`,
+    [passwordHash, coachId]
+  );
+
+  if (!coach) return res.status(404).json({ error: 'Entrenador no encontrado' });
+
+  res.json({
+    coach,
+    credentials: {
+      email: coach.email,
+      temporary_password: temporaryPassword,
+    },
+  });
+});
+
 module.exports = router;
