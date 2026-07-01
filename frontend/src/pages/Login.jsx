@@ -5,6 +5,9 @@ import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
   const [mode, setMode] = useState('player');
+  const [teamCode, setTeamCode] = useState('');
+  const [playerName, setPlayerName] = useState('');
+  const [playerPin, setPlayerPin] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -18,9 +21,8 @@ export default function Login() {
     setLoading(true);
     try {
       const res = mode === 'player'
-        ? null
+        ? await api.post('/auth/player', { team_code: teamCode, name: playerName, pin: playerPin })
         : await api.post('/auth/coach', { email, password });
-      if (!res) return;
 
       login(res.data.user, res.data.token);
       navigate(mode === 'coach' ? '/coach' : '/player');
@@ -66,9 +68,42 @@ export default function Login() {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {mode === 'player' ? (
-              <div className="bg-slate-50 border border-slate-200 rounded-xl px-4 py-4 text-sm text-slate-600 leading-relaxed">
-                Los jugadores entran desde el enlace privado de su equipo con nombre y PIN.
-              </div>
+              <>
+                <div>
+                  <label className="label">Codigo de equipo</label>
+                  <input
+                    type="text"
+                    className="input uppercase"
+                    placeholder="A1B2C3D4"
+                    value={teamCode}
+                    onChange={e => setTeamCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12))}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="label">Nombre y apellidos</label>
+                  <input
+                    type="text"
+                    className="input"
+                    value={playerName}
+                    onChange={e => setPlayerName(e.target.value)}
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="label">PIN</label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    className="input"
+                    value={playerPin}
+                    onChange={e => setPlayerPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    minLength={4}
+                    maxLength={6}
+                    required
+                  />
+                </div>
+              </>
             ) : (
               <>
                 <div>
@@ -101,7 +136,7 @@ export default function Login() {
               </div>
             )}
 
-            <button type="submit" disabled={loading || mode === 'player'} className="btn-primary w-full text-center mt-2">
+            <button type="submit" disabled={loading} className="btn-primary w-full text-center mt-2">
               {loading ? 'Cargando...' : 'Entrar'}
             </button>
           </form>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
+import { useAuth } from '../../context/AuthContext';
 
 const INITIAL_FORM = { name: '', pin: '' };
 
@@ -7,11 +8,16 @@ export default function TeamRoster() {
   const [players, setPlayers] = useState([]);
   const [form, setForm] = useState(INITIAL_FORM);
   const [inviteUrl, setInviteUrl] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [credentials, setCredentials] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const { user } = useAuth();
+  const activeTeam = Array.isArray(user?.teams)
+    ? user.teams.find(team => Number(team.team_id) === Number(user.team_id))
+    : null;
 
   useEffect(() => {
     loadPlayers();
@@ -33,7 +39,11 @@ export default function TeamRoster() {
     try {
       const res = await api.post('/invites/player');
       setInviteUrl(res.data.url);
-      await navigator.clipboard.writeText(res.data.url);
+      setInviteCode(res.data.access_code || activeTeam?.access_code || '');
+      await navigator.clipboard.writeText([
+        `Enlace: ${res.data.url}`,
+        `Codigo: ${res.data.access_code || activeTeam?.access_code || ''}`,
+      ].join('\n'));
       setMessage('Enlace copiado');
     } catch (err) {
       setError(err.response?.data?.error || 'No se pudo crear el enlace');
@@ -63,9 +73,10 @@ export default function TeamRoster() {
     const text = [
       'Acceso Sport APP',
       `URL: ${window.location.origin}`,
+      activeTeam?.access_code ? `Codigo equipo: ${activeTeam.access_code}` : null,
       `Nombre: ${credentials.name}`,
       `PIN: ${credentials.pin}`,
-    ].join('\n');
+    ].filter(Boolean).join('\n');
     await navigator.clipboard.writeText(text);
     setMessage('Credenciales copiadas');
   }
@@ -100,13 +111,19 @@ export default function TeamRoster() {
           <div>
             <h2 className="text-sm font-bold text-slate-800">Enlace de registro</h2>
             <p className="text-xs text-slate-400 mt-1">El jugador vera solo el nombre de este equipo.</p>
+            {activeTeam?.access_code && (
+              <p className="text-xs text-slate-500 mt-2 font-bold">Codigo equipo: {activeTeam.access_code}</p>
+            )}
           </div>
           <button type="button" onClick={createInvite} className="btn-primary">
             Crear enlace
           </button>
         </div>
         {inviteUrl && (
-          <input className="input mt-3 text-sm" value={inviteUrl} readOnly onFocus={e => e.target.select()} />
+          <div className="grid gap-3 mt-3 sm:grid-cols-[1fr_160px]">
+            <input className="input text-sm" value={inviteUrl} readOnly onFocus={e => e.target.select()} />
+            <input className="input text-sm font-bold" value={inviteCode} readOnly onFocus={e => e.target.select()} />
+          </div>
         )}
       </div>
 

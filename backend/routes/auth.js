@@ -8,12 +8,22 @@ const router = express.Router();
 const SECRET = process.env.JWT_SECRET || 'sport_secret_2024';
 
 router.post('/player', async (req, res) => {
-  const { email, password, name, pin, team_id } = req.body;
+  const { email, password, name, pin, team_id, team_code } = req.body;
   if ((!email || !password) && (!name || !pin)) return res.status(400).json({ error: 'Faltan datos' });
 
-  const { rows: [user] } = team_id && name
+  const normalizedCode = String(team_code || '').trim().toUpperCase();
+  const { rows: [user] } = normalizedCode && name
     ? await pool.query(`
-        SELECT u.*
+        SELECT u.*, tm.team_id
+        FROM users u
+        JOIN team_memberships tm ON tm.user_id = u.id
+        JOIN teams t ON t.id = tm.team_id
+        WHERE t.access_code=$1 AND tm.role='player' AND u.name=$2 AND u.role='player'
+        LIMIT 1
+      `, [normalizedCode, name.toUpperCase()])
+    : team_id && name
+    ? await pool.query(`
+        SELECT u.*, tm.team_id
         FROM users u
         JOIN team_memberships tm ON tm.user_id = u.id
         WHERE tm.team_id=$1 AND tm.role='player' AND u.name=$2 AND u.role='player'
@@ -40,7 +50,7 @@ router.post('/player', async (req, res) => {
       id: user.id,
       name: user.name,
       role: 'player',
-      team_id: membership?.team_id || null,
+      team_id: user.team_id || membership?.team_id || null,
       must_change_password: Boolean(user.must_change_password),
     },
     SECRET,
@@ -53,7 +63,7 @@ router.post('/player', async (req, res) => {
       name: user.name,
       email: user.email,
       role: 'player',
-      team_id: membership?.team_id || null,
+      team_id: user.team_id || membership?.team_id || null,
       must_change_password: Boolean(user.must_change_password),
     },
   });
@@ -72,7 +82,7 @@ router.post('/coach', async (req, res) => {
   if (!valid) return res.status(401).json({ error: 'Contrasena incorrecta' });
 
   const { rows: memberships } = await pool.query(
-    `SELECT tm.team_id, t.name, t.club_name, t.category
+    `SELECT tm.team_id, t.name, t.access_code, t.club_name, t.category
      FROM team_memberships tm
      JOIN teams t ON t.id = tm.team_id
      WHERE tm.user_id=$1 AND tm.role='coach'
@@ -112,7 +122,7 @@ router.post('/switch-team', requireCoach, async (req, res) => {
   if (!Number.isInteger(teamId) || teamId <= 0) return res.status(400).json({ error: 'Equipo no valido' });
 
   const { rows: [membership] } = await pool.query(`
-    SELECT tm.team_id, t.name, t.club_name, t.category
+    SELECT tm.team_id, t.name, t.access_code, t.club_name, t.category
     FROM team_memberships tm
     JOIN teams t ON t.id = tm.team_id
     WHERE tm.user_id=$1 AND tm.role='coach' AND tm.team_id=$2
@@ -121,7 +131,7 @@ router.post('/switch-team', requireCoach, async (req, res) => {
   if (!membership) return res.status(403).json({ error: 'No perteneces a ese equipo' });
 
   const { rows: memberships } = await pool.query(`
-    SELECT tm.team_id, t.name, t.club_name, t.category
+    SELECT tm.team_id, t.name, t.access_code, t.club_name, t.category
     FROM team_memberships tm
     JOIN teams t ON t.id = tm.team_id
     WHERE tm.user_id=$1 AND tm.role='coach'
@@ -183,7 +193,7 @@ router.post('/change-password', requireAuth, async (req, res) => {
 
   const { rows: memberships } = user.role === 'coach'
     ? await pool.query(`
-        SELECT tm.team_id, t.name, t.club_name, t.category
+        SELECT tm.team_id, t.name, t.access_code, t.club_name, t.category
         FROM team_memberships tm
         JOIN teams t ON t.id = tm.team_id
         WHERE tm.user_id=$1 AND tm.role='coach'

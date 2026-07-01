@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const { Pool } = require('pg');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -22,6 +23,7 @@ async function init() {
     CREATE TABLE IF NOT EXISTS teams (
       id         SERIAL PRIMARY KEY,
       name       TEXT NOT NULL,
+      access_code TEXT UNIQUE,
       club_name  TEXT,
       category   TEXT,
       created_at TIMESTAMP DEFAULT NOW()
@@ -163,6 +165,13 @@ async function init() {
 
 async function ensureSchema() {
   await pool.query(`
+    ALTER TABLE teams
+    ADD COLUMN IF NOT EXISTS access_code TEXT;
+
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_teams_access_code_unique
+    ON teams (access_code)
+    WHERE access_code IS NOT NULL;
+
     ALTER TABLE users
     ADD COLUMN IF NOT EXISTS email TEXT;
 
@@ -189,6 +198,28 @@ async function ensureSchema() {
     CREATE INDEX IF NOT EXISTS idx_team_invites_token
     ON team_invites(token);
   `);
+
+  await ensureTeamAccessCodes();
 }
 
-module.exports = { pool, init, calcWellnessScore };
+function generateTeamAccessCode() {
+  return crypto.randomBytes(4).toString('hex').toUpperCase();
+}
+
+async function ensureTeamAccessCodes() {
+  const { rows } = await pool.query('SELECT id FROM teams WHERE access_code IS NULL');
+  for (const team of rows) {
+    let assigned = false;
+    while (!assigned) {
+      const code = generateTeamAccessCode();
+      try {
+        await pool.query('UPDATE teams SET access_code=$1 WHERE id=$2', [code, team.id]);
+        assigned = true;
+      } catch (error) {
+        if (error.code !== '23505') throw error;
+      }
+    }
+  }
+}
+
+module.exports = { pool, init, calcWellnessScore, generateTeamAccessCode };

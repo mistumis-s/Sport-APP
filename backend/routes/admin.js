@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const express = require('express');
 const bcrypt = require('bcryptjs');
-const { pool } = require('../db');
+const { pool, generateTeamAccessCode } = require('../db');
 
 const router = express.Router();
 
@@ -96,10 +96,19 @@ router.post('/teams', requireAdmin, async (req, res) => {
       return res.status(409).json({ error: 'Ya existe un equipo con ese nombre' });
     }
 
-    const { rows: [team] } = await client.query(
-      'INSERT INTO teams (name, club_name, category) VALUES ($1, $2, $3) RETURNING id, name, club_name, category',
-      [teamName, clubName, category]
-    );
+    let team = null;
+    while (!team) {
+      const accessCode = generateTeamAccessCode();
+      try {
+        const { rows: [createdTeam] } = await client.query(
+          'INSERT INTO teams (name, access_code, club_name, category) VALUES ($1, $2, $3, $4) RETURNING id, name, access_code, club_name, category',
+          [teamName, accessCode, clubName, category]
+        );
+        team = createdTeam;
+      } catch (error) {
+        if (error.code !== '23505') throw error;
+      }
+    }
 
     const { coach, credentials } = await createCoach(client, {
       teamId: team.id,
@@ -167,6 +176,7 @@ router.get('/teams', requireAdmin, async (_, res) => {
     SELECT
       t.id,
       t.name,
+      t.access_code,
       t.club_name,
       t.category,
       t.created_at,

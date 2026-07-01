@@ -18,7 +18,7 @@ function publicInviteUrl(req, token) {
 
 async function getInvite(token) {
   const { rows: [invite] } = await pool.query(`
-    SELECT i.id, i.team_id, i.token, i.role, i.expires_at, t.name AS team_name, t.club_name, t.category
+    SELECT i.id, i.team_id, i.token, i.role, i.expires_at, t.name AS team_name, t.access_code, t.club_name, t.category
     FROM team_invites i
     JOIN teams t ON t.id = i.team_id
     WHERE i.token=$1
@@ -33,13 +33,19 @@ async function getInvite(token) {
 router.post('/player', requireCoach, async (req, res) => {
   const token = createToken();
   const { rows: [invite] } = await pool.query(`
-    INSERT INTO team_invites (team_id, token, role, created_by)
-    VALUES ($1, $2, 'player', $3)
-    RETURNING token
+    WITH created AS (
+      INSERT INTO team_invites (team_id, token, role, created_by)
+      VALUES ($1, $2, 'player', $3)
+      RETURNING token, team_id
+    )
+    SELECT created.token, t.access_code
+    FROM created
+    JOIN teams t ON t.id = created.team_id
   `, [req.user.team_id, token, req.user.id]);
 
   return res.status(201).json({
     token: invite.token,
+    access_code: invite.access_code,
     url: publicInviteUrl(req, invite.token),
   });
 });
@@ -54,6 +60,7 @@ router.get('/:token', async (req, res) => {
     team: {
       id: invite.team_id,
       name: invite.team_name,
+      access_code: invite.access_code,
       club_name: invite.club_name,
       category: invite.category,
     },

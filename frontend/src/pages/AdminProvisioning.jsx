@@ -230,6 +230,7 @@ export default function AdminProvisioning() {
             <thead>
               <tr className="text-left text-slate-500 border-b border-slate-100">
                 <th className="py-3 pr-4">Equipo</th>
+                <th className="py-3 pr-4">Codigo</th>
                 <th className="py-3 pr-4">Club</th>
                 <th className="py-3 pr-4">Categoria</th>
                 <th className="py-3 pr-4">Entrenadores</th>
@@ -240,6 +241,7 @@ export default function AdminProvisioning() {
               {teams.map(team => (
                 <tr key={team.id} className="border-b border-slate-50">
                   <td className="py-3 pr-4 font-semibold text-slate-900">{team.name}</td>
+                  <td className="py-3 pr-4 font-mono text-slate-700">{team.access_code || '-'}</td>
                   <td className="py-3 pr-4 text-slate-600">{team.club_name || '-'}</td>
                   <td className="py-3 pr-4 text-slate-600">{team.category || '-'}</td>
                   <td className="py-3 pr-4 text-slate-600">{team.coaches}</td>
@@ -248,7 +250,7 @@ export default function AdminProvisioning() {
               ))}
               {!teams.length && (
                 <tr>
-                  <td className="py-6 text-slate-400" colSpan="5">Sin equipos cargados</td>
+                  <td className="py-6 text-slate-400" colSpan="6">Sin equipos cargados</td>
                 </tr>
               )}
             </tbody>
