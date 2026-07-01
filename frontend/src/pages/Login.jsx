@@ -1,13 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../services/api';
 import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
   const [mode, setMode] = useState('player');
-  const [players, setPlayers] = useState([]);
-  const [selectedPlayer, setSelectedPlayer] = useState('');
-  const [pin, setPin] = useState('');
+  const [playerEmail, setPlayerEmail] = useState('');
+  const [playerPassword, setPlayerPassword] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -15,17 +14,13 @@ export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    api.get('/auth/players').then(r => setPlayers(r.data)).catch(() => {});
-  }, []);
-
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
       const res = mode === 'player'
-        ? await api.post('/auth/player', { name: selectedPlayer, pin })
+        ? await api.post('/auth/player', { email: playerEmail, password: playerPassword })
         : await api.post('/auth/coach', { email, password });
 
       login(res.data.user, res.data.token);
@@ -74,29 +69,24 @@ export default function Login() {
             {mode === 'player' ? (
               <>
                 <div>
-                  <label className="label">Tu nombre</label>
-                  <select
+                  <label className="label">Email</label>
+                  <input
+                    type="email"
                     className="input"
-                    value={selectedPlayer}
-                    onChange={e => setSelectedPlayer(e.target.value)}
+                    placeholder="jugador@club.com"
+                    value={playerEmail}
+                    onChange={e => setPlayerEmail(e.target.value)}
                     required
-                  >
-                    <option value="">Elige tu nombre</option>
-                    {players.map(p => (
-                      <option key={p.id} value={p.name}>{p.name}</option>
-                    ))}
-                  </select>
+                  />
                 </div>
                 <div>
-                  <label className="label">PIN</label>
+                  <label className="label">Contrasena</label>
                   <input
                     type="password"
-                    inputMode="numeric"
-                    className="input text-center text-2xl tracking-widest"
-                    placeholder="0000"
-                    value={pin}
-                    onChange={e => setPin(e.target.value)}
-                    maxLength={8}
+                    className="input"
+                    placeholder="Contrasena"
+                    value={playerPassword}
+                    onChange={e => setPlayerPassword(e.target.value)}
                     required
                   />
                 </div>

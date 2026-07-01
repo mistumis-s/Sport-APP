@@ -1,14 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import api from '../../services/api';
 
-const INITIAL_FORM = { name: '', pin: '1234' };
+const INITIAL_FORM = { name: '', email: '' };
 
 export default function TeamRoster() {
   const [players, setPlayers] = useState([]);
   const [form, setForm] = useState(INITIAL_FORM);
+  const [inviteUrl, setInviteUrl] = useState('');
+  const [credentials, setCredentials] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [message, setMessage] = useState('');
 
   useEffect(() => {
     loadPlayers();
@@ -24,12 +27,28 @@ export default function TeamRoster() {
     }
   }
 
+  async function createInvite() {
+    setError('');
+    setMessage('');
+    try {
+      const res = await api.post('/invites/player');
+      setInviteUrl(res.data.url);
+      await navigator.clipboard.writeText(res.data.url);
+      setMessage('Enlace copiado');
+    } catch (err) {
+      setError(err.response?.data?.error || 'No se pudo crear el enlace');
+    }
+  }
+
   async function handleSubmit(e) {
     e.preventDefault();
     setSaving(true);
     setError('');
+    setMessage('');
+    setCredentials(null);
     try {
-      await api.post('/auth/coach/players', form);
+      const res = await api.post('/auth/coach/players', form);
+      setCredentials(res.data.credentials);
       setForm(INITIAL_FORM);
       await loadPlayers();
     } catch (err) {
@@ -37,6 +56,18 @@ export default function TeamRoster() {
     } finally {
       setSaving(false);
     }
+  }
+
+  async function copyCredentials() {
+    if (!credentials) return;
+    const text = [
+      'Acceso Sport APP',
+      `URL: ${window.location.origin}`,
+      `Email: ${credentials.email}`,
+      `Contrasena: ${credentials.temporary_password}`,
+    ].join('\n');
+    await navigator.clipboard.writeText(text);
+    setMessage('Credenciales copiadas');
   }
 
   async function handleDelete(player) {
@@ -55,27 +86,63 @@ export default function TeamRoster() {
     <div className="pb-20 sm:pb-0 space-y-4">
       <div>
         <h1 className="text-2xl font-extrabold text-slate-900">Plantilla</h1>
-        <p className="text-slate-400 text-sm font-medium">Anade, revisa o elimina jugadores manualmente.</p>
+        <p className="text-slate-400 text-sm font-medium">Invita jugadores o crea accesos manualmente.</p>
       </div>
 
+      {(message || error) && (
+        <div className={`rounded-xl px-4 py-3 text-sm font-semibold ${error ? 'bg-red-50 text-red-600 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+          {error || message}
+        </div>
+      )}
+
       <div className="card">
-        <h2 className="text-sm font-bold text-slate-800 mb-3">Anadir jugador</h2>
-        <form onSubmit={handleSubmit} className="grid gap-3 sm:grid-cols-[1fr_140px_auto]">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-sm font-bold text-slate-800">Enlace de registro</h2>
+            <p className="text-xs text-slate-400 mt-1">El jugador vera solo el nombre de este equipo.</p>
+          </div>
+          <button type="button" onClick={createInvite} className="btn-primary">
+            Crear enlace
+          </button>
+        </div>
+        {inviteUrl && (
+          <input className="input mt-3 text-sm" value={inviteUrl} readOnly onFocus={e => e.target.select()} />
+        )}
+      </div>
+
+      {credentials && (
+        <div className="card border-emerald-200">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-bold text-emerald-700">Acceso creado</p>
+              <p className="text-sm text-slate-600 mt-1">Email: {credentials.email}</p>
+              <p className="text-sm text-slate-600">Contrasena temporal: {credentials.temporary_password}</p>
+            </div>
+            <button type="button" className="btn-primary" onClick={copyCredentials}>
+              Copiar
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="card">
+        <h2 className="text-sm font-bold text-slate-800 mb-3">Anadir jugador manualmente</h2>
+        <form onSubmit={handleSubmit} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
           <input
             type="text"
             value={form.name}
             onChange={e => setForm(current => ({ ...current, name: e.target.value }))}
             placeholder="Nombre del jugador"
             className="input"
+            required
           />
           <input
-            type="text"
-            inputMode="numeric"
-            maxLength={4}
-            value={form.pin}
-            onChange={e => setForm(current => ({ ...current, pin: e.target.value.replace(/\D/g, '').slice(0, 4) }))}
-            placeholder="PIN 4 cifras"
+            type="email"
+            value={form.email}
+            onChange={e => setForm(current => ({ ...current, email: e.target.value }))}
+            placeholder="Email"
             className="input"
+            required
           />
           <button
             type="submit"
@@ -85,8 +152,6 @@ export default function TeamRoster() {
             {saving ? 'Guardando...' : 'Crear'}
           </button>
         </form>
-        {error && <p className="text-sm text-red-500 mt-3 font-medium">{error}</p>}
-        <p className="text-xs text-slate-400 mt-3">El nombre se guardara en mayusculas y el PIN debe tener 4 cifras.</p>
       </div>
 
       <div className="card">
@@ -106,7 +171,7 @@ export default function TeamRoster() {
                 <div className="min-w-0">
                   <p className="font-bold text-slate-800 truncate">{player.name}</p>
                   <div className="flex flex-wrap gap-2 mt-1 text-xs text-slate-400 font-medium">
-                    <span>PIN {player.pin}</span>
+                    <span>{player.email || 'Sin email'}</span>
                     <span>{player.wellness_entries} wellness</span>
                     <span>{player.rpe_entries} RPE</span>
                   </div>

@@ -1,11 +1,19 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import api from '../services/api';
 
 export default function Navbar() {
-  const { user, logout } = useAuth();
+  const { user, updateSession, logout } = useAuth();
   const loc = useLocation();
   const isCoach = user?.role === 'coach';
+  const coachTeams = isCoach && Array.isArray(user?.teams) ? user.teams : [];
+
+  async function switchTeam(teamId) {
+    const res = await api.post('/auth/switch-team', { team_id: Number(teamId) });
+    updateSession(res.data.user, res.data.token);
+    window.location.href = '/coach';
+  }
 
   return (
     <nav className="bg-white border-b border-slate-200 sticky top-0 z-50 shadow-sm">
@@ -30,6 +38,17 @@ export default function Navbar() {
           )}
         </div>
         <div className="flex items-center gap-3">
+          {coachTeams.length > 1 && (
+            <select
+              className="hidden sm:block bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 text-xs font-semibold text-slate-600 focus:outline-none focus:border-red-400"
+              value={user.team_id || ''}
+              onChange={e => switchTeam(e.target.value)}
+            >
+              {coachTeams.map(team => (
+                <option key={team.team_id} value={team.team_id}>{team.name}</option>
+              ))}
+            </select>
+          )}
           <span className="text-xs text-slate-400 hidden sm:block truncate max-w-32">{user?.name}</span>
           <button
             onClick={logout}

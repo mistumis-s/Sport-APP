@@ -101,6 +101,16 @@ async function init() {
       location    TEXT DEFAULT 'home',
       created_at  TIMESTAMP DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS team_invites (
+      id          SERIAL PRIMARY KEY,
+      team_id     INTEGER NOT NULL REFERENCES teams(id),
+      token       TEXT NOT NULL UNIQUE,
+      role        TEXT NOT NULL CHECK(role IN ('player','coach')),
+      created_by  INTEGER REFERENCES users(id),
+      expires_at  TIMESTAMP,
+      created_at  TIMESTAMP DEFAULT NOW()
+    );
   `);
 
   await ensureSchema();
@@ -165,6 +175,19 @@ async function ensureSchema() {
 
     CREATE INDEX IF NOT EXISTS idx_team_memberships_user_role
     ON team_memberships(user_id, role);
+
+    CREATE TABLE IF NOT EXISTS team_invites (
+      id          SERIAL PRIMARY KEY,
+      team_id     INTEGER NOT NULL REFERENCES teams(id),
+      token       TEXT NOT NULL UNIQUE,
+      role        TEXT NOT NULL CHECK(role IN ('player','coach')),
+      created_by  INTEGER REFERENCES users(id),
+      expires_at  TIMESTAMP,
+      created_at  TIMESTAMP DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_team_invites_token
+    ON team_invites(token);
   `);
 }
 

@@ -2,21 +2,25 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { pool } = require('../db');
-const { requireCoach } = require('../middleware/auth');
+const { requireAuth, requireCoach } = require('../middleware/auth');
 
 const router = express.Router();
 const SECRET = process.env.JWT_SECRET || 'sport_secret_2024';
 
 router.post('/player', async (req, res) => {
-  const { name, pin } = req.body;
-  if (!name || !pin) return res.status(400).json({ error: 'Faltan datos' });
+  const { email, password, name, pin } = req.body;
+  if ((!email || !password) && (!name || !pin)) return res.status(400).json({ error: 'Faltan datos' });
 
-  const { rows: [user] } = await pool.query(
-    'SELECT * FROM users WHERE name=$1 AND role=$2',
-    [name.toUpperCase(), 'player']
-  );
+  const { rows: [user] } = email
+    ? await pool.query('SELECT * FROM users WHERE LOWER(email)=LOWER($1) AND role=$2', [email, 'player'])
+    : await pool.query('SELECT * FROM users WHERE name=$1 AND role=$2', [name.toUpperCase(), 'player']);
   if (!user) return res.status(401).json({ error: 'Jugador no encontrado' });
-  if (user.pin !== pin) return res.status(401).json({ error: 'PIN incorrecto' });
+  if (email) {
+    const valid = bcrypt.compareSync(password, user.password || '');
+    if (!valid) return res.status(401).json({ error: 'Contrasena incorrecta' });
+  } else if (user.pin !== pin) {
+    return res.status(401).json({ error: 'PIN incorrecto' });
+  }
 
   const { rows: [membership] } = await pool.query(
     "SELECT team_id FROM team_memberships WHERE user_id=$1 AND role='player' ORDER BY team_id LIMIT 1",
@@ -24,13 +28,26 @@ router.post('/player', async (req, res) => {
   );
 
   const token = jwt.sign(
-    { id: user.id, name: user.name, role: 'player', team_id: membership?.team_id || null },
+    {
+      id: user.id,
+      name: user.name,
+      role: 'player',
+      team_id: membership?.team_id || null,
+      must_change_password: Boolean(user.must_change_password),
+    },
     SECRET,
     { expiresIn: '7d' }
   );
   res.json({
     token,
-    user: { id: user.id, name: user.name, role: 'player', team_id: membership?.team_id || null },
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: 'player',
+      team_id: membership?.team_id || null,
+      must_change_password: Boolean(user.must_change_password),
+    },
   });
 });
 
@@ -46,10 +63,15 @@ router.post('/coach', async (req, res) => {
   const valid = bcrypt.compareSync(password, user.password);
   if (!valid) return res.status(401).json({ error: 'Contrasena incorrecta' });
 
-  const { rows: [membership] } = await pool.query(
-    "SELECT team_id FROM team_memberships WHERE user_id=$1 AND role='coach' ORDER BY team_id LIMIT 1",
+  const { rows: memberships } = await pool.query(
+    `SELECT tm.team_id, t.name, t.club_name, t.category
+     FROM team_memberships tm
+     JOIN teams t ON t.id = tm.team_id
+     WHERE tm.user_id=$1 AND tm.role='coach'
+     ORDER BY t.name`,
     [user.id]
   );
+  const membership = memberships[0];
 
   const token = jwt.sign(
     {
@@ -71,12 +93,61 @@ router.post('/coach', async (req, res) => {
       email: user.email,
       role: 'coach',
       team_id: membership?.team_id || null,
+      teams: memberships,
       must_change_password: Boolean(user.must_change_password),
     },
   });
 });
 
-router.post('/change-password', requireCoach, async (req, res) => {
+router.post('/switch-team', requireCoach, async (req, res) => {
+  const teamId = Number(req.body.team_id);
+  if (!Number.isInteger(teamId) || teamId <= 0) return res.status(400).json({ error: 'Equipo no valido' });
+
+  const { rows: [membership] } = await pool.query(`
+    SELECT tm.team_id, t.name, t.club_name, t.category
+    FROM team_memberships tm
+    JOIN teams t ON t.id = tm.team_id
+    WHERE tm.user_id=$1 AND tm.role='coach' AND tm.team_id=$2
+    LIMIT 1
+  `, [req.user.id, teamId]);
+  if (!membership) return res.status(403).json({ error: 'No perteneces a ese equipo' });
+
+  const { rows: memberships } = await pool.query(`
+    SELECT tm.team_id, t.name, t.club_name, t.category
+    FROM team_memberships tm
+    JOIN teams t ON t.id = tm.team_id
+    WHERE tm.user_id=$1 AND tm.role='coach'
+    ORDER BY t.name
+  `, [req.user.id]);
+
+  const { rows: [user] } = await pool.query('SELECT id, name, email, must_change_password FROM users WHERE id=$1', [req.user.id]);
+  const token = jwt.sign(
+    {
+      id: user.id,
+      name: user.name,
+      role: 'coach',
+      team_id: membership.team_id,
+      must_change_password: Boolean(user.must_change_password),
+    },
+    SECRET,
+    { expiresIn: '7d' }
+  );
+
+  res.json({
+    token,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: 'coach',
+      team_id: membership.team_id,
+      teams: memberships,
+      must_change_password: Boolean(user.must_change_password),
+    },
+  });
+});
+
+router.post('/change-password', requireAuth, async (req, res) => {
   const currentPassword = String(req.body.current_password || '');
   const newPassword = String(req.body.new_password || '');
 
@@ -90,7 +161,7 @@ router.post('/change-password', requireCoach, async (req, res) => {
     return res.status(400).json({ error: 'La nueva contrasena debe ser distinta' });
   }
 
-  const { rows: [user] } = await pool.query('SELECT * FROM users WHERE id=$1 AND role=$2', [req.user.id, 'coach']);
+  const { rows: [user] } = await pool.query('SELECT * FROM users WHERE id=$1', [req.user.id]);
   if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
 
   const valid = bcrypt.compareSync(currentPassword, user.password);
@@ -102,11 +173,21 @@ router.post('/change-password', requireCoach, async (req, res) => {
     [passwordHash, user.id]
   );
 
+  const { rows: memberships } = user.role === 'coach'
+    ? await pool.query(`
+        SELECT tm.team_id, t.name, t.club_name, t.category
+        FROM team_memberships tm
+        JOIN teams t ON t.id = tm.team_id
+        WHERE tm.user_id=$1 AND tm.role='coach'
+        ORDER BY t.name
+      `, [user.id])
+    : { rows: [] };
+
   const token = jwt.sign(
     {
       id: user.id,
       name: user.name,
-      role: 'coach',
+      role: user.role,
       team_id: req.user.team_id || null,
       must_change_password: false,
     },
@@ -120,8 +201,9 @@ router.post('/change-password', requireCoach, async (req, res) => {
       id: user.id,
       name: user.name,
       email: user.email,
-      role: 'coach',
+      role: user.role,
       team_id: req.user.team_id || null,
+      teams: user.role === 'coach' ? memberships : undefined,
       must_change_password: false,
     },
   });
@@ -135,7 +217,7 @@ router.get('/players', async (req, res) => {
 router.get('/coach/players', requireCoach, async (req, res) => {
   const { rows } = await pool.query(`
     SELECT
-      u.id, u.name, u.pin, u.created_at,
+      u.id, u.name, u.email, u.created_at,
       (SELECT COUNT(*) FROM wellness w WHERE w.player_id = u.id) as wellness_entries,
       (SELECT COUNT(*) FROM rpe r WHERE r.player_id = u.id) as rpe_entries
     FROM team_memberships tm
@@ -148,10 +230,11 @@ router.get('/coach/players', requireCoach, async (req, res) => {
 
 router.post('/coach/players', requireCoach, async (req, res) => {
   const normalizedName = String(req.body.name || '').trim().toUpperCase();
-  const normalizedPin = String(req.body.pin || '').trim();
+  const normalizedEmail = String(req.body.email || '').trim().toLowerCase();
+  const temporaryPassword = String(req.body.password || '').trim() || Math.random().toString(36).slice(2, 12);
 
   if (!normalizedName) return res.status(400).json({ error: 'El nombre es obligatorio' });
-  if (!/^\d{4}$/.test(normalizedPin)) return res.status(400).json({ error: 'El PIN debe tener 4 cifras' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) return res.status(400).json({ error: 'Email no valido' });
 
   const { rows: [existing] } = await pool.query(
     `SELECT u.id
@@ -162,6 +245,12 @@ router.post('/coach/players', requireCoach, async (req, res) => {
   );
   if (existing) return res.status(409).json({ error: 'Ya existe un jugador con ese nombre' });
 
+  const { rows: [existingEmail] } = await pool.query(
+    'SELECT id FROM users WHERE LOWER(email)=LOWER($1) LIMIT 1',
+    [normalizedEmail]
+  );
+  if (existingEmail) return res.status(409).json({ error: 'Ya existe un usuario con ese email' });
+
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -171,16 +260,23 @@ router.post('/coach/players', requireCoach, async (req, res) => {
       return res.status(400).json({ error: 'Equipo no encontrado para este entrenador' });
     }
 
+    const passwordHash = bcrypt.hashSync(temporaryPassword, 10);
     const { rows: [u] } = await client.query(
-      "INSERT INTO users (name, role, pin, team) VALUES ($1, 'player', $2, $3) RETURNING id, name, pin, created_at",
-      [normalizedName, normalizedPin, team.name]
+      "INSERT INTO users (name, email, role, password, team, must_change_password) VALUES ($1, $2, 'player', $3, $4, 1) RETURNING id, name, email, created_at",
+      [normalizedName, normalizedEmail, passwordHash, team.name]
     );
     await client.query(
       'INSERT INTO team_memberships (user_id, team_id, role) VALUES ($1, $2, $3)',
       [u.id, team.id, 'player']
     );
     await client.query('COMMIT');
-    res.status(201).json(u);
+    res.status(201).json({
+      player: u,
+      credentials: {
+        email: u.email,
+        temporary_password: temporaryPassword,
+      },
+    });
   } catch (e) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: 'No se pudo crear el jugador' });
