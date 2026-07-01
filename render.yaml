@@ -2,7 +2,7 @@ services:
   - type: web
     name: sport-app
     runtime: node
-    plan: starter
+    plan: free
     buildCommand: npm --prefix frontend ci && npm --prefix frontend run build && npm --prefix backend ci
     startCommand: npm --prefix backend start
     healthCheckPath: /api/health
@@ -18,4 +18,4 @@ services:
 
 databases:
   - name: sport-app-db
-    plan: starter
+    plan: free
