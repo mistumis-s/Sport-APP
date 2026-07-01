@@ -1,58 +1,128 @@
-# DH Élite — Sport Performance Tracker
+# DH Elite - Sport Performance Tracker
 
-## Requisitos
-- Node.js v22+ (tienes v24 ✅)
+Aplicacion web para que jugadores registren Wellness y RPE, y para que el staff controle carga, fatiga, evolucion individual y estado del equipo.
 
-## Arrancar la app
+## Stack
 
-**Terminal 1 — Backend:**
+- Frontend: React + Vite + Tailwind
+- Backend: Node.js + Express
+- Base de datos: PostgreSQL
+- Produccion: una sola app Node sirve la API y los archivos compilados del frontend
+
+## Desarrollo local
+
+Requisitos:
+
+- Node.js 22+
+- PostgreSQL local, Docker, o una base de datos gestionada
+
+1. Levanta PostgreSQL local con Docker:
+
+```powershell
+docker compose up -d
 ```
+
+Esto crea una base local llamada `sport_app` en `localhost:5432`.
+
+2. Copia `backend/.env.example` a `backend/.env` y cambia `JWT_SECRET`.
+3. Instala dependencias y arranca el backend:
+
+```powershell
 cd backend
 npm install
 npm run dev
 ```
-→ API en `http://localhost:3001`
 
-**Terminal 2 — Frontend:**
-```
+En otra terminal:
+
+```powershell
 cd frontend
 npm install
 npm run dev
 ```
-→ App en `http://localhost:3000`
 
----
+API: `http://localhost:3001`
 
-## Credenciales por defecto
+App: `http://localhost:3000`
+
+## Credenciales iniciales
+
+La primera vez que arranca con una base de datos vacia, el backend crea un equipo, jugadores de ejemplo y un preparador.
 
 | Rol | Acceso |
-|-----|--------|
-| Preparador | Contraseña: `coach123` |
-| Jugador | Selecciona nombre + PIN: `1234` |
+| --- | --- |
+| Preparador | Password: `coach123` |
+| Jugador | Nombre del jugador + PIN: `1234` |
 
----
+Cambia estas credenciales antes de usarlo con un equipo real.
+
+## Build de produccion
+
+El frontend compila dentro de `backend/public`:
+
+```powershell
+cd frontend
+npm run build
+```
+
+Despues el backend puede servir API + frontend:
+
+```powershell
+cd ../backend
+npm start
+```
+
+## Despliegue online con Render
+
+La forma mas rapida para lanzar una beta es Render con PostgreSQL gestionado.
+
+1. Sube este repo a GitHub.
+2. En Render, elige **New +** > **Blueprint**.
+3. Conecta el repo `mistumis-s/Sport-APP`.
+4. Render leera `render.yaml` y creara:
+   - un servicio web `sport-app`
+   - una base PostgreSQL `sport-app-db`
+   - variables `NODE_ENV`, `JWT_SECRET` y `DATABASE_URL`
+5. Pulsa **Apply** y espera el primer deploy.
+6. Abre la URL publica y prueba `/api/health`.
+
+La PostgreSQL de produccion no se crea en tu ordenador. Se crea dentro de Render al aplicar el Blueprint, y Render inyecta su URL real en `DATABASE_URL`.
+
+## Variables de entorno
+
+Backend:
+
+- `DATABASE_URL`: conexion PostgreSQL.
+- `JWT_SECRET`: secreto largo y aleatorio para firmar sesiones.
+- `NODE_ENV`: `production` en despliegue.
+- `PORT`: opcional; Render lo define automaticamente.
 
 ## Flujo de uso
 
-### Jugador (móvil)
-1. Login → nombre + PIN
-2. Antes del entreno → **Wellness** (fatiga, sueño, estrés, motivación, daño muscular)
-3. Después del entreno → **RPE** (0-10 + comentarios)
+Jugador:
 
-### Preparador (ordenador)
-1. Crear sesión → fecha, MD type, color day, minutos
-2. Dashboard → WS equipo, RPE, sRPE en el tiempo
-3. Jugadores → estado diario + A/C ratio
-4. Jugador individual → wellness, carga, asimilación
+1. Login con nombre + PIN.
+2. Antes del entreno: Wellness.
+3. Despues del entreno: RPE.
+4. Consulta de evolucion individual.
 
----
+Preparador:
 
-## Métricas
+1. Login con password.
+2. Crear sesiones y partidos.
+3. Revisar dashboard de equipo.
+4. Revisar jugadores y detalle individual.
 
-| Métrica | Fórmula |
-|---------|---------|
-| Wellness Score | `(fatiga×0.3 + sueño×0.2 + estrés×0.05 + motivación×0.05 + daño×0.4) × 20` |
-| sRPE | `RPE × minutos_sesión` |
+## Metricas
+
+| Metrica | Formula |
+| --- | --- |
+| Wellness Score | `(fatiga * 0.3 + sueno * 0.2 + estres * 0.05 + motivacion * 0.05 + dano * 0.4) * 20` |
+| sRPE | `RPE * minutos_sesion` |
 | A/C Ratio | `avg_sRPE_7d / avg_sRPE_28d` |
-| Monotonía | `media_sRPE_semana / desv_std_sRPE_semana` |
-| Stress | `carga_total × monotonía` |
+| Monotonia | `media_sRPE_semana / desv_std_sRPE_semana` |
+| Stress | `carga_total * monotonia` |
+
+## Siguiente paso recomendado
+
+Antes de abrirlo a equipos externos, conviene endurecer autenticacion, roles multi-equipo, backups, privacidad de datos y panel de administracion.
